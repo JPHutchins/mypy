@@ -78,7 +78,6 @@ from mypy.types import (
     flatten_nested_unions,
     get_proper_type,
     get_variadic_item,
-    has_type_vars,
     is_named_instance,
     split_with_prefix_and_suffix,
 )
@@ -1441,21 +1440,36 @@ def can_bind_self_to_type_var(left: TypeVarType, right: Instance) -> bool:
         isinstance(instance, Instance)
         and not instance.type.has_base(right.type.fullname)
         and not has_covariant_type_vars(instance.type)
-        and not any(mentions_self(right.type.get(name)) for name in right.type.protocol_members)
+        and not any(depends_on_self(right.type.get(name)) for name in right.type.protocol_members)
     )
 
 
-def mentions_self(member: SymbolTableNode | None) -> bool:
+def depends_on_self(member: SymbolTableNode | None) -> bool:
     node = member.node if member is not None else None
-    if isinstance(node, (FuncDef, OverloadedFuncDef)):
+    if isinstance(node, FuncDef):
         return not node.is_trivial_self
-    if isinstance(node, Decorator):
-        return not node.func.is_trivial_self
-    if isinstance(node, Var):
-        return node.type is not None and any(
-            tv.id.is_self() for tv in mypy.typeops.get_type_vars(node.type)
-        )
-    return False
+    if isinstance(node, (OverloadedFuncDef, Decorator, Var)) and node.type is not None:
+        return type_depends_on_self(node.type)
+    return True
+
+
+def type_depends_on_self(typ: Type) -> bool:
+    proper = get_proper_type(typ)
+    return (
+        is_descriptor(proper)
+        or any(tv.id.is_self() for tv in mypy.typeops.get_all_type_vars(proper))
+        or isinstance(proper, FunctionLike)
+        and any(self_arg_mentions_own_type_vars(item) for item in proper.items)
+    )
+
+
+def self_arg_mentions_own_type_vars(method: CallableType) -> bool:
+    self_ids = (
+        {tv.id for tv in mypy.typeops.get_all_type_vars(method.arg_types[0])}
+        if method.arg_types
+        else set()
+    )
+    return any(tv.id in self_ids for tv in method.variables)
 
 
 def narrowest_self_binding(
@@ -1464,7 +1478,7 @@ def narrowest_self_binding(
     upper_bound = get_proper_type(type_var.upper_bound)
     if IS_SETTABLE in get_member_flags(member, protocol):
         return upper_bound
-    if binds_self_trivially(instance.type.get(member)):
+    if not depends_on_self(instance.type.get(member)):
         return type_var
     bound_to_type_var = find_member(member, instance, type_var)
     bound_to_upper_bound = find_member(member, instance, upper_bound)
@@ -1482,17 +1496,6 @@ def has_covariant_type_vars(info: TypeInfo) -> bool:
         isinstance(tv, TypeVarType) and tv.variance in (COVARIANT, VARIANCE_NOT_READY)
         for tv in info.defn.type_vars
     )
-
-
-def binds_self_trivially(member: SymbolTableNode | None) -> bool:
-    node = member.node if member is not None else None
-    if isinstance(node, (FuncDef, OverloadedFuncDef)):
-        return node.is_trivial_self
-    if isinstance(node, Decorator):
-        return node.func.is_trivial_self and not node.decorators
-    if isinstance(node, Var):
-        return node.type is not None and not has_type_vars(node.type)
-    return False
 
 
 def get_protocol_member(

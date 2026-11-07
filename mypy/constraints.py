@@ -383,7 +383,8 @@ def _infer_constraints(
             not isinstance(template, UnionType)
             or not any(isinstance(t, TypeVarType) for t in template.items)
         ) and not (
-            isinstance(template, Instance) and template.type.is_protocol and not actual.values
+            isinstance(template, Instance)
+            and mypy.subtypes.can_bind_self_to_type_var(actual, template)
         ):
             actual = get_proper_type(actual.upper_bound)
 
@@ -780,7 +781,7 @@ class ConstraintBuilderVisitor(TypeVisitor[list[Constraint]]):
         if (
             isinstance(actual, TypeVarType)
             and self.direction == SUPERTYPE_OF
-            and mypy.subtypes.can_bind_self_to_type_var(actual, template)
+            and not actual.id.is_meta_var()
         ):
             actual = get_proper_type(actual.upper_bound)
         res: list[Constraint] = []
