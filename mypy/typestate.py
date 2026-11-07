@@ -5,7 +5,8 @@ and potentially other mutable TypeInfo state. This module contains mutable globa
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from typing import Final, TypeAlias as _TypeAlias
 
 from mypy.nodes import VARIANCE_NOT_READY, TypeInfo
@@ -123,10 +124,15 @@ class TypeState:
     # testDictWithUnionAnySpecialCaseInStar2. This is needed until #5382 is fixed.
     allow_any_join: bool
     # Whether constraint inference may bind self-types in protocol members to a type variable
-    # fixed in the scope being checked, instead of to its upper bound.
+    # bound by an enclosing scope, instead of to its upper bound.
     bind_self_to_type_vars: bool
     # Number of times constraint inference has used that binding.
     self_bindings_to_type_vars: int
+    # Type variables of generic callables that constraint inference is matching against, so
+    # still being solved for.
+    callable_type_vars_being_solved: list[TypeVarId]
+    # Positive subtype cache entries are not recorded while this is nonzero.
+    positive_subtype_cache_suppressions: int
 
     # N.B: We do all the accesses to these properties through
     # TypeState, instead of making these classmethods and accessing
@@ -147,8 +153,10 @@ class TypeState:
         self.infer_polymorphic = False
         self.keep_unions = False
         self.allow_any_join = False
-        self.bind_self_to_type_vars = True
+        self.bind_self_to_type_vars = False
         self.self_bindings_to_type_vars = 0
+        self.callable_type_vars_being_solved = []
+        self.positive_subtype_cache_suppressions = 0
         self.bind_self_cache = {}
 
     def is_assumed_subtype(self, left: Type, right: Type) -> bool:
@@ -221,9 +229,38 @@ class TypeState:
             return False
         return (left, right) in subcache
 
+    @contextmanager
+    def binding_self_to_type_vars(self, enabled: bool) -> Iterator[None]:
+        previous = self.bind_self_to_type_vars
+        self.bind_self_to_type_vars = enabled
+        try:
+            yield
+        finally:
+            self.bind_self_to_type_vars = previous
+
+    @contextmanager
+    def solving_callable_type_vars(self, ids: list[TypeVarId]) -> Iterator[None]:
+        self.callable_type_vars_being_solved.extend(ids)
+        try:
+            yield
+        finally:
+            del self.callable_type_vars_being_solved[
+                len(self.callable_type_vars_being_solved) - len(ids) :
+            ]
+
+    @contextmanager
+    def suppressing_positive_subtype_cache(self, suppress: bool) -> Iterator[None]:
+        self.positive_subtype_cache_suppressions += suppress
+        try:
+            yield
+        finally:
+            self.positive_subtype_cache_suppressions -= suppress
+
     def record_subtype_cache_entry(
         self, kind: SubtypeKind, left: Instance, right: Instance
     ) -> None:
+        if self.positive_subtype_cache_suppressions:
+            return
         if left.last_known_value is not None or right.last_known_value is not None:
             # These are unlikely to match, due to the large space of
             # possible values.  Avoid uselessly increasing cache sizes.

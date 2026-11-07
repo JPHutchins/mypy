@@ -54,6 +54,7 @@ from mypy.plugins.common import (
 from mypy.semanal_shared import find_dataclass_transform_spec, require_bool_literal_argument
 from mypy.server.trigger import make_wildcard_trigger
 from mypy.state import state
+from mypy.subtypes import has_covariant_type_vars
 from mypy.typeops import map_type_from_supertype, try_getting_literals_from_type
 from mypy.types import (
     AnyType,
@@ -406,20 +407,24 @@ class DataclassTransformer:
             for attr in attributes
             if attr.is_in_init
         ]
-        self_type = TypeVarType(
-            SELF_TVAR_NAME,
-            f"{self._cls.info.fullname}.{SELF_TVAR_NAME}",
-            id=TypeVarId(-1, namespace=f"{self._cls.info.fullname}.__replace__"),
-            values=[],
-            upper_bound=fill_typevars(self._cls.info),
-            default=AnyType(TypeOfAny.from_omitted_generics),
+        self_type = (
+            None
+            if has_covariant_type_vars(self._cls.info)
+            else TypeVarType(
+                SELF_TVAR_NAME,
+                f"{self._cls.info.fullname}.{SELF_TVAR_NAME}",
+                id=TypeVarId(-1, namespace=f"{self._cls.info.fullname}.__replace__"),
+                values=[],
+                upper_bound=fill_typevars(self._cls.info),
+                default=AnyType(TypeOfAny.from_omitted_generics),
+            )
         )
         add_method_to_class(
             self._api,
             self._cls,
             "__replace__",
             args=args,
-            return_type=self_type,
+            return_type=self_type or fill_typevars(self._cls.info),
             self_type=self_type,
             tvar_def=self_type,
         )

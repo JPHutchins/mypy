@@ -380,13 +380,14 @@ def _infer_constraints(
     ):
         # Unless template is also a type variable (or a union that contains one), using the upper
         # bound for inference will usually give better result for actual that is a type variable.
-        # Protocols are handled in ConstraintBuilderVisitor, since self-types in protocol members
-        # may bind to a type variable that is fixed in the scope being checked.
         if (
             not isinstance(template, UnionType)
             or not any(isinstance(t, TypeVarType) for t in template.items)
         ) and not (
-            isinstance(template, Instance) and self_binding_instance(template, actual) is not None
+            type_state.bind_self_to_type_vars
+            and isinstance(template, Instance)
+            and template.type.is_protocol
+            and not actual.values
         ):
             actual = get_proper_type(actual.upper_bound)
 
@@ -1084,7 +1085,6 @@ class ConstraintBuilderVisitor(TypeVisitor[list[Constraint]]):
         """
         if not (
             template.type.is_protocol
-            and self.direction == SUPERTYPE_OF
             and len(template.type.inferring) < MAX_PROTOCOL_DEPTH
             and not any(template == t for t in reversed(template.type.inferring))
         ):
@@ -1140,6 +1140,14 @@ class ConstraintBuilderVisitor(TypeVisitor[list[Constraint]]):
         return res
 
     def visit_callable_type(self, template: CallableType) -> list[Constraint]:
+        with type_state.solving_callable_type_vars(
+            [tv.id for tv in self.actual.variables]
+            if isinstance(self.actual, CallableType)
+            else []
+        ):
+            return self.infer_against_callable_type(template)
+
+    def infer_against_callable_type(self, template: CallableType) -> list[Constraint]:
         # Normalize callables before matching against each other.
         # Note that non-normalized callables can be created in annotations
         # using e.g. callback protocols.
@@ -1851,17 +1859,20 @@ def self_binding_instance(template: Instance, actual: TypeVarType) -> Instance |
     if (
         not type_state.bind_self_to_type_vars
         or not template.type.is_protocol
-        or not is_rigid_type_var(actual)
+        or not is_bound_by_enclosing_scope(actual)
     ):
         return None
     return mypy.subtypes.protocol_self_binding_instance(actual, template)
 
 
-def is_rigid_type_var(t: TypeVarType) -> bool:
-    """Is 't' fixed in the scope being type checked, rather than being solved for?"""
+def is_bound_by_enclosing_scope(t: TypeVarType) -> bool:
     checker = checker_state.type_checker
-    return checker is not None and (
-        t.id.is_self()
-        or t.id.namespace != ""
-        and any(node.fullname == t.id.namespace for node in checker.scope.stack)
+    return (
+        checker is not None
+        and t.id not in type_state.callable_type_vars_being_solved
+        and (
+            t.id.is_self()
+            or t.id.namespace != ""
+            and any(node.fullname == t.id.namespace for node in checker.scope.stack)
+        )
     )

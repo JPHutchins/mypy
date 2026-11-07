@@ -1504,6 +1504,31 @@ def f(value: T) -> T:
 [builtins fixtures/tuple.pyi]
 [typing fixtures/typing-namedtuple.pyi]
 
+[case testNamedTupleDunderReplaceCovariantGeneric]
+# flags: --python-version 3.13
+from typing import Generic, NamedTuple, TypeVar
+from typing_extensions import ParamSpec, Protocol
+
+P = ParamSpec("P")
+R_co = TypeVar("R_co", covariant=True)
+
+class SupportsReplace(Protocol[P, R_co]):
+    def __replace__(self, /, *_: P.args, **changes: P.kwargs) -> R_co: ...
+
+def replace(obj: SupportsReplace[P, R_co], /, *_: P.args, **changes: P.kwargs) -> R_co: ...
+
+V_co = TypeVar("V_co", covariant=True)
+
+class NT(NamedTuple, Generic[V_co]):
+    v: V_co
+
+N = TypeVar("N", bound=NT[object])
+
+def f(n: N) -> N:
+    return replace(n, v="s")  # E: Incompatible return value type (got "NT[object]", expected "N")
+[builtins fixtures/tuple.pyi]
+[typing fixtures/typing-namedtuple.pyi]
+
 [case testUnpackSelfNamedTuple]
 import typing
 

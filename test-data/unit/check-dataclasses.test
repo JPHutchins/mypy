@@ -2893,6 +2893,116 @@ class C(A):
     def __replace__(self, *, x: int = 0) -> "C": ...
 [builtins fixtures/dataclasses.pyi]
 
+[case testDunderReplaceCovariantGenericReturnsClass]
+# flags: --python-version 3.13
+from dataclasses import dataclass
+from typing import Generic, Protocol, TypeVar
+from typing_extensions import ParamSpec
+
+P = ParamSpec("P")
+R_co = TypeVar("R_co", covariant=True)
+
+class SupportsReplace(Protocol[P, R_co]):
+    def __replace__(self, /, *_: P.args, **changes: P.kwargs) -> R_co: ...
+
+def replace(obj: SupportsReplace[P, R_co], /, *_: P.args, **changes: P.kwargs) -> R_co: ...
+
+V_co = TypeVar("V_co", covariant=True)
+
+@dataclass(frozen=True)
+class Box(Generic[V_co]):
+    v: V_co
+
+@dataclass(frozen=True)
+class Box2[V]:
+    v: V
+
+B = TypeVar("B", bound=Box[object])
+B2 = TypeVar("B2", bound=Box2[object])
+
+def f(b: B) -> B:
+    return replace(b, v="s")  # E: Incompatible return value type (got "Box[object]", expected "B")
+
+def f2(b: B2) -> B2:
+    return b.__replace__(v="s")  # E: Incompatible return value type (got "Box2[object]", expected "B2")
+
+x: Box[object] = Box[int](1)
+y: Box2[object] = Box2[int](1)
+[builtins fixtures/dataclasses.pyi]
+
+[case testDunderReplaceDataclassTransformGenericStaysCovariant]
+# flags: --python-version 3.13
+from typing import dataclass_transform
+
+@dataclass_transform(frozen_default=True)
+class Struct: ...
+
+class SBox[V](Struct):
+    v: V
+
+x: SBox[object] = SBox[int](v=1)
+[typing fixtures/typing-full.pyi]
+[builtins fixtures/dataclasses.pyi]
+
+[case testDunderReplaceKeepsBoundTypeVarSelfTypedField]
+# flags: --python-version 3.13
+from dataclasses import dataclass
+from typing import Optional, Protocol, TypeVar
+from typing_extensions import ParamSpec, Self
+
+P = ParamSpec("P")
+R_co = TypeVar("R_co", covariant=True)
+
+class SupportsReplace(Protocol[P, R_co]):
+    def __replace__(self, /, *_: P.args, **changes: P.kwargs) -> R_co: ...
+
+def replace(obj: SupportsReplace[P, R_co], /, *_: P.args, **changes: P.kwargs) -> R_co: ...
+
+@dataclass(frozen=True)
+class Node:
+    name: str
+    parent: Optional[Self] = None
+
+T = TypeVar("T", bound=Node)
+
+def f(t: T) -> T:
+    reveal_type(replace(t, parent=None))  # N: Revealed type is "T`-1"
+    replace(t, parent=Node("x"))
+    return replace(t, name="n")
+[builtins fixtures/dataclasses.pyi]
+
+[case testDunderReplaceKeepsBoundTypeVarDeferred]
+# flags: --python-version 3.13
+from dataclasses import dataclass
+from typing import Protocol, TypeVar
+from typing_extensions import ParamSpec
+
+P = ParamSpec("P")
+R_co = TypeVar("R_co", covariant=True)
+
+class SupportsReplace(Protocol[P, R_co]):
+    def __replace__(self, /, *_: P.args, **changes: P.kwargs) -> R_co: ...
+
+def replace(obj: SupportsReplace[P, R_co], /, *_: P.args, **changes: P.kwargs) -> R_co: ...
+
+@dataclass(frozen=True)
+class A:
+    x: int
+
+T = TypeVar("T", bound=A)
+
+def f(t: T) -> T:
+    reveal_type(later)  # N: Revealed type is "builtins.int"
+    return replace(t, x=1)
+
+class K:
+    def m(self, t: T) -> T:
+        reveal_type(later)  # N: Revealed type is "builtins.int"
+        return replace(t, x=1)
+
+later = A(1).x
+[builtins fixtures/dataclasses.pyi]
+
 [case testDunderReplaceDoesNotBlockPlainIssubclassNarrowing]
 # https://github.com/python/mypy/issues/21635
 # flags: --python-version 3.13
