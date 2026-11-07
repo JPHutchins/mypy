@@ -4842,6 +4842,167 @@ S = TypeVar("S")
 class Base(Generic[T]):
     def meth(self: Base[S]) -> S: ...
 
+[case testTypeVarSelfTypeProtoExtraChecks]
+# flags: --extra-checks
+from typing import Any, Callable, Protocol, TypeVar
+from typing_extensions import Concatenate, ParamSpec, Self
+
+P = ParamSpec("P")
+R = TypeVar("R", covariant=True)
+
+class A(Protocol[P, R]):
+    def foo(self, a: int, *args: P.args, **kwargs: P.kwargs) -> R: ...
+
+class C:
+    def foo(self, a: int, b: int, *args: Any, **kwargs: Any) -> Self: ...
+
+S = TypeVar("S", bound=C)
+
+def bar(s: S, f: Callable[P, None]) -> A[Concatenate[int, P], S]:
+    return s  # E: Incompatible return value type (got "S", expected "A[[int, **P], S]")
+[builtins fixtures/paramspec.pyi]
+
+[case testTypeVarSelfTypeProtoNestedCacheEntries]
+from typing import Generic, Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R")
+X = TypeVar("X", covariant=True)
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+    def get(self) -> "Q[R]": ...
+    def zzz(self) -> int: ...
+
+class Q(Protocol[R]):
+    def q(self) -> P[R]: ...
+
+class W(Protocol[R]):
+    def w(self) -> Q[R]: ...
+
+class D(Generic[X]):
+    def q(self) -> X: ...
+
+class C:
+    def rep(self) -> Self: ...
+    def get(self) -> D[Self]: ...
+    def zzz(self) -> str: ...
+
+T = TypeVar("T", bound=C)
+
+def f(t: T) -> None:
+    class E:
+        def w(self) -> D[T]: ...
+    a: P[T] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "P[T]")
+    e: W[T] = E()  # E: Incompatible types in assignment (expression has type "E", variable has type "W[T]") \
+                   # N: Following member(s) of "E" have conflicts: \
+                   # N:     Expected: \
+                   # N:         def w(self) -> Q[T] \
+                   # N:     Got: \
+                   # N:         def w(self) -> D[T]
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoNotCachedForUpperBound-xfail]
+from typing import Protocol, TypeVar
+
+R = TypeVar("R", covariant=True)
+T = TypeVar("T")
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+
+class Q(Protocol[R]):
+    def get(self) -> P[R]: ...
+
+class C:
+    def rep(self: T) -> T: ...
+
+class D:
+    def get(self) -> C: ...
+
+S = TypeVar("S", bound=C)
+
+def f(s: S) -> None:
+    ok: P[S] = s
+    bad: Q[S] = D()  # E: Incompatible types in assignment (expression has type "D", variable has type "Q[S]") \
+                     # N: Following member(s) of "D" have conflicts: \
+                     # N:     Expected: \
+                     # N:         def get(self) -> P[S] \
+                     # N:     Got: \
+                     # N:         def get(self) -> C
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoRecursiveMember]
+from typing import Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+    def other(self) -> P[R]: ...
+
+class C:
+    def rep(self) -> Self: ...
+    def other(self) -> C: ...
+
+S = TypeVar("S", bound=C)
+
+def f(s: S) -> None:
+    bad: P[S] = s  # E: Incompatible types in assignment (expression has type "S", variable has type "P[S]")
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoRecursiveMemberKeepsTypeVar-xfail]
+from typing import Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+    def other(self) -> P[R]: ...
+
+class D:
+    def rep(self) -> Self: ...
+    def other(self) -> Self: ...
+
+U = TypeVar("U", bound=D)
+
+def f(u: U) -> None:
+    ok: P[U] = u
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoSubtypingIndependentOfScope-xfail]
+from typing import Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+X = TypeVar("X")
+Y = TypeVar("Y")
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+
+class C:
+    def rep(self) -> Self: ...
+
+T = TypeVar("T", bound=C)
+
+class Runner(Protocol[Y]):
+    def run(self, y: Y) -> Y: ...
+
+class Impl:
+    def run(self, p: P[X]) -> X: ...
+
+def f(t: T, r: Runner[T] = Impl()) -> T:
+    x: Runner[T] = Impl()
+    return t
+
+def g(t: T) -> T:
+    x: Runner[T] = Impl()
+    return t
+[builtins fixtures/tuple.pyi]
+
 [case testProtocolImplicitClassmethodSelfTypeInTypeArgumentBound]
 from typing import Callable, Generic, Protocol, TypeVar
 from b import C
