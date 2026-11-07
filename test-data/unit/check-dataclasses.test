@@ -2838,7 +2838,7 @@ def g(value: G) -> None:
 reveal_type(replace(Gen(0), v=1))  # N: Revealed type is "__main__.Gen[builtins.int]"
 [builtins fixtures/dataclasses.pyi]
 
-[case testDunderReplaceReturnsSelfType-xfail]
+[case testDunderReplaceReturnsSelfType]
 # flags: --python-version 3.13
 from dataclasses import dataclass
 from typing import TypeVar
@@ -2897,7 +2897,7 @@ def g(value: G) -> G:
     return replace(value, v=1)
 [builtins fixtures/dataclasses.pyi]
 
-[case testDunderReplaceReturnsSelfTypeDataclassTransform-xfail]
+[case testDunderReplaceReturnsSelfTypeDataclassTransform]
 # flags: --python-version 3.13
 from typing import dataclass_transform, Self, TypeVar
 
@@ -2945,7 +2945,7 @@ def f(value: T) -> T:
 [typing fixtures/typing-full.pyi]
 [builtins fixtures/dataclasses.pyi]
 
-[case testDunderReplaceOverriddenInNonDataclassSubclass-xfail]
+[case testDunderReplaceOverriddenInNonDataclassSubclass]
 # flags: --python-version 3.13
 from dataclasses import dataclass
 
@@ -3043,7 +3043,7 @@ Sub("a").__replace__(parent=Sub("b"))
 Sub("a").__replace__(parent=Node("b"))  # E: Argument "parent" to "__replace__" of "Sub" has incompatible type "Node"; expected "Sub | None"
 [builtins fixtures/dataclasses.pyi]
 
-[case testDunderReplaceSelfTypedFieldUsesSelfType-xfail]
+[case testDunderReplaceSelfTypedFieldUsesSelfType]
 # flags: --python-version 3.13
 from dataclasses import dataclass
 from typing import Optional, TypeVar
@@ -3112,7 +3112,7 @@ def f(t: T) -> T:
     return replace(t, v="s")
 [builtins fixtures/dataclasses.pyi]
 
-[case testDunderReplaceFieldNarrowingMatchesDataclassesReplace-xfail]
+[case testDunderReplaceFieldNarrowingMatchesDataclassesReplace]
 # flags: --python-version 3.13
 from dataclasses import dataclass
 from typing import TypeVar
