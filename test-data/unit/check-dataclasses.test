@@ -2838,7 +2838,7 @@ def g(value: G) -> None:
 reveal_type(replace(Gen(0), v=1))  # N: Revealed type is "__main__.Gen[builtins.int]"
 [builtins fixtures/dataclasses.pyi]
 
-[case testDunderReplaceKeepsBoundTypeVar-xfail]
+[case testDunderReplaceKeepsBoundTypeVar]
 # flags: --python-version 3.13
 from dataclasses import dataclass
 from typing import Generic, Protocol, TypeVar
@@ -2877,7 +2877,7 @@ def g(value: G) -> G:
     return replace(value, v=1)
 [builtins fixtures/dataclasses.pyi]
 
-[case testDunderReplaceKeepsBoundTypeVarDataclassTransform-xfail]
+[case testDunderReplaceKeepsBoundTypeVarDataclassTransform]
 # flags: --python-version 3.13
 from typing import dataclass_transform, Protocol, ParamSpec, Self, TypeVar
 
@@ -2906,7 +2906,7 @@ def f(value: T) -> T:
 [typing fixtures/typing-full.pyi]
 [builtins fixtures/dataclasses.pyi]
 
-[case testDunderReplaceKeepsBoundTypeVarDeferred-xfail]
+[case testDunderReplaceKeepsBoundTypeVarDeferred]
 # flags: --python-version 3.13
 from dataclasses import dataclass
 from typing import Protocol, TypeVar

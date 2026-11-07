@@ -4050,7 +4050,7 @@ tmp/b.py:26: error: Unsupported operand types for >= ("A" and "int")
 tmp/b.py:27: error: Unsupported operand types for < ("A" and "int")
 tmp/b.py:28: error: Unsupported operand types for <= ("A" and "int")
 
-[case testIncrementalTypeVarSelfTypeProtoDecoratedOverload-xfail]
+[case testIncrementalTypeVarSelfTypeProtoDecoratedOverload]
 import b
 [file a.py]
 from typing import Callable, Protocol, TypeVar, overload
