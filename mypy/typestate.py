@@ -123,11 +123,6 @@ class TypeState:
     # This is used to preserve backwards compatibility for situations like
     # testDictWithUnionAnySpecialCaseInStar2. This is needed until #5382 is fixed.
     allow_any_join: bool
-    # Whether constraint inference may bind self-types in protocol members to a type variable
-    # bound by an enclosing scope, instead of to its upper bound.
-    bind_self_to_type_vars: bool
-    # Number of times constraint inference has used that binding.
-    self_bindings_to_type_vars: int
     # Type variables of generic callables that constraint inference is matching against, so
     # still being solved for.
     callable_type_vars_being_solved: list[TypeVarId]
@@ -153,8 +148,6 @@ class TypeState:
         self.infer_polymorphic = False
         self.keep_unions = False
         self.allow_any_join = False
-        self.bind_self_to_type_vars = False
-        self.self_bindings_to_type_vars = 0
         self.callable_type_vars_being_solved = []
         self.positive_subtype_cache_suppressions = 0
         self.bind_self_cache = {}
@@ -228,15 +221,6 @@ class TypeState:
         if subcache is None:
             return False
         return (left, right) in subcache
-
-    @contextmanager
-    def binding_self_to_type_vars(self, enabled: bool) -> Iterator[None]:
-        previous = self.bind_self_to_type_vars
-        self.bind_self_to_type_vars = enabled
-        try:
-            yield
-        finally:
-            self.bind_self_to_type_vars = previous
 
     @contextmanager
     def solving_callable_type_vars(self, ids: list[TypeVarId]) -> Iterator[None]:

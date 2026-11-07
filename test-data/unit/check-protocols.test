@@ -5134,7 +5134,7 @@ def g(t: T, c: C, d: D) -> None:
     reveal_type(first(t, d))  # N: Revealed type is "__main__.C"
     x: C = first(t, c)
     reveal_type(both(t, d))  # N: Revealed type is "__main__.D"
-    reveal_type(both(t, c))  # N: Revealed type is "T`-1"
+    reveal_type(both(t, c))  # N: Revealed type is "__main__.C"
     reveal_type(t)  # N: Revealed type is "T`-1"
 [builtins fixtures/tuple.pyi]
 
@@ -5163,7 +5163,7 @@ class D(C): ...
 T = TypeVar("T", bound=C)
 
 def f(t: T, c: C, d: D) -> None:
-    reveal_type(t.m())  # N: Revealed type is "__main__.C"
+    reveal_type(t.m())  # N: Revealed type is "T`-1"
     reveal_type(t.n(d))  # N: Revealed type is "__main__.C"
     reveal_type(t.n(c))  # N: Revealed type is "__main__.C"
 [builtins fixtures/tuple.pyi]
@@ -5230,4 +5230,88 @@ def g(t: T) -> None:
     reveal_type(f(t))  # N: Revealed type is "__main__.C"
     x: Proto[T] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "Proto[T]")
     y: Proto[C] = t
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoResultJoinsWithBound]
+from typing import Dict, List, Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+X = TypeVar("X")
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+
+class C:
+    def rep(self) -> Self: ...
+    def name(self) -> str: ...
+
+T = TypeVar("T", bound=C)
+
+def take(p: P[X]) -> X: ...
+
+def f(t: T, c: C, flag: bool) -> None:
+    reveal_type(take(t))  # N: Revealed type is "T`-1"
+    s = [take(t), c]
+    reveal_type(s)  # N: Revealed type is "builtins.list[__main__.C]"
+    s[0].name()
+    d = {"a": take(t), "b": c}
+    reveal_type(d)  # N: Revealed type is "builtins.dict[builtins.str, __main__.C]"
+    d["a"].name()
+    reveal_type(take(t) if flag else c)  # N: Revealed type is "__main__.C"
+[builtins fixtures/dict.pyi]
+
+[case testTypeVarSelfTypeProtoResultTypesVariable]
+from typing import Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+X = TypeVar("X")
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+
+class C:
+    def rep(self) -> Self: ...
+
+T = TypeVar("T", bound=C)
+
+def take(p: P[X]) -> X: ...
+
+def f(t: T, c: C) -> None:
+    w = t
+    w = c  # E: Incompatible types in assignment (expression has type "C", variable has type "T")
+    v = take(t)
+    v = c  # E: Incompatible types in assignment (expression has type "C", variable has type "T")
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoSubtypingIndependentOfScope]
+from typing import Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+X = TypeVar("X")
+Y = TypeVar("Y")
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+
+class C:
+    def rep(self) -> Self: ...
+
+T = TypeVar("T", bound=C)
+
+class Runner(Protocol[Y]):
+    def run(self, y: Y) -> Y: ...
+
+class Impl:
+    def run(self, p: P[X]) -> X: ...
+
+def f(t: T, r: Runner[T] = Impl()) -> T:
+    x: Runner[T] = Impl()
+    return t
+
+def g(t: T) -> T:
+    x: Runner[T] = Impl()
+    return t
 [builtins fixtures/tuple.pyi]

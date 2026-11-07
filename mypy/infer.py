@@ -14,9 +14,7 @@ from mypy.constraints import (
 )
 from mypy.nodes import ArgKind
 from mypy.solve import solve_constraints
-from mypy.subtypes import solve_preferring_self_bound_to_type_vars
 from mypy.types import CallableType, Instance, Type, TypeVarLikeType
-from mypy.typestate import type_state
 
 
 class ArgumentInferContext:
@@ -58,32 +56,6 @@ def infer_function_type_arguments(
       arg_kinds: nodes.ARG_* values for arg_types
       formal_to_actual: mapping from formal to actual variable indices
     """
-    return solve_preferring_self_bound_to_type_vars(
-        lambda: solve_callable_constraints(
-            callee_type,
-            arg_types,
-            arg_kinds,
-            arg_names,
-            formal_to_actual,
-            context,
-            strict,
-            allow_polymorphic,
-            extra_constraints,
-        )
-    )
-
-
-def solve_callable_constraints(
-    callee_type: CallableType,
-    arg_types: Sequence[Type | None],
-    arg_kinds: list[ArgKind],
-    arg_names: Sequence[str | None] | None,
-    formal_to_actual: list[list[int]],
-    context: ArgumentInferContext,
-    strict: bool,
-    allow_polymorphic: bool,
-    extra_constraints: list[Constraint] | None,
-) -> tuple[list[Type | None], list[TypeVarLikeType]]:
     # Infer constraints.
     constraints = infer_constraints_for_callable(
         callee_type, arg_types, arg_kinds, arg_names, formal_to_actual, context
@@ -106,9 +78,8 @@ def infer_type_arguments(
 ) -> tuple[list[Type | None], list[Constraint]]:
     # Like infer_function_type_arguments, but only match a single type
     # against a generic type.
-    with type_state.binding_self_to_type_vars(False):
-        constraints = infer_constraints(
-            template, actual, SUPERTYPE_OF if is_supertype else SUBTYPE_OF, erase_types=erase_types
-        )
+    constraints = infer_constraints(
+        template, actual, SUPERTYPE_OF if is_supertype else SUBTYPE_OF, erase_types=erase_types
+    )
     solutions, _ = solve_constraints(type_vars, constraints, skip_unsatisfied=skip_unsatisfied)
     return solutions, constraints

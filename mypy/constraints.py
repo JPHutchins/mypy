@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Final, TypeGuard, cast
 import mypy.subtypes
 import mypy.typeops
 from mypy.argmap import ArgTypeExpander
-from mypy.checker_state import checker_state
 from mypy.erasetype import erase_typevars
 from mypy.expandtype import expand_type_by_instance
 from mypy.maptype import map_instance_to_supertype
@@ -384,10 +383,7 @@ def _infer_constraints(
             not isinstance(template, UnionType)
             or not any(isinstance(t, TypeVarType) for t in template.items)
         ) and not (
-            type_state.bind_self_to_type_vars
-            and isinstance(template, Instance)
-            and template.type.is_protocol
-            and not actual.values
+            isinstance(template, Instance) and template.type.is_protocol and not actual.values
         ):
             actual = get_proper_type(actual.upper_bound)
 
@@ -1053,6 +1049,9 @@ class ConstraintBuilderVisitor(TypeVisitor[list[Constraint]]):
             return infer_constraints(template, instance, self.direction)
         elif isinstance(actual, TypeVarType):
             if not actual.values and not actual.id.is_meta_var():
+                bound_to_upper_bound = infer_constraints(
+                    template, actual.upper_bound, self.direction
+                )
                 instance = (
                     self_binding_instance(template, actual)
                     if self.direction == SUPERTYPE_OF
@@ -1064,9 +1063,10 @@ class ConstraintBuilderVisitor(TypeVisitor[list[Constraint]]):
                     else self.infer_protocol_constraints_binding_self(template, actual, instance)
                 )
                 if bound_to_type_var is None:
-                    return infer_constraints(template, actual.upper_bound, self.direction)
-                type_state.self_bindings_to_type_vars += 1
-                return bound_to_type_var
+                    return bound_to_upper_bound
+                return [c for c in bound_to_type_var if c.op == SUPERTYPE_OF] + [
+                    c for c in bound_to_upper_bound if c.op == SUBTYPE_OF
+                ]
             return []
         elif isinstance(actual, ParamSpecType):
             return infer_constraints(template, actual.upper_bound, self.direction)
@@ -1856,23 +1856,6 @@ def self_binding_instance(template: Instance, actual: TypeVarType) -> Instance |
 
     Return None when self binds to the upper bound of 'actual' instead.
     """
-    if (
-        not type_state.bind_self_to_type_vars
-        or not template.type.is_protocol
-        or not is_bound_by_enclosing_scope(actual)
-    ):
+    if not template.type.is_protocol or actual.id in type_state.callable_type_vars_being_solved:
         return None
     return mypy.subtypes.protocol_self_binding_instance(actual, template)
-
-
-def is_bound_by_enclosing_scope(t: TypeVarType) -> bool:
-    checker = checker_state.type_checker
-    return (
-        checker is not None
-        and t.id not in type_state.callable_type_vars_being_solved
-        and (
-            t.id.is_self()
-            or t.id.namespace != ""
-            and any(node.fullname == t.id.namespace for node in checker.scope.stack)
-        )
-    )

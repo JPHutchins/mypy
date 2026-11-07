@@ -3003,6 +3003,28 @@ class K:
 later = A(1).x
 [builtins fixtures/dataclasses.pyi]
 
+[case testDunderReplaceFieldNarrowingMatchesDataclassesReplace]
+# flags: --python-version 3.13
+from dataclasses import dataclass, replace
+from typing import TypeVar
+
+@dataclass(frozen=True)
+class Box:
+    v: object
+
+@dataclass(frozen=True)
+class IntBox(Box):
+    v: int
+
+T = TypeVar("T", bound=Box)
+
+def f(t: T) -> T:
+    return replace(t, v="s")
+
+def g(t: T) -> T:
+    return t.__replace__(v="s")
+[builtins fixtures/dataclasses.pyi]
+
 [case testDunderReplaceDoesNotBlockPlainIssubclassNarrowing]
 # https://github.com/python/mypy/issues/21635
 # flags: --python-version 3.13

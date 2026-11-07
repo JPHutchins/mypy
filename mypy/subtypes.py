@@ -78,6 +78,7 @@ from mypy.types import (
     flatten_nested_unions,
     get_proper_type,
     get_variadic_item,
+    has_type_vars,
     is_named_instance,
     split_with_prefix_and_suffix,
 )
@@ -1420,37 +1421,6 @@ def is_protocol_implementation(
     return True
 
 
-def solve_preferring_self_bound_to_type_vars(
-    solve: Callable[[], tuple[list[Type | None], list[TypeVarLikeType]]],
-) -> tuple[list[Type | None], list[TypeVarLikeType]]:
-    """Solve with protocol self-types bound to type variables, unless that is worse.
-
-    The solution is kept only if it refines the one found with self-types bound to upper bounds.
-    """
-    self_bindings_before = type_state.self_bindings_to_type_vars
-    with type_state.binding_self_to_type_vars(True):
-        solution = solve()
-    if type_state.self_bindings_to_type_vars == self_bindings_before:
-        return solution
-    with type_state.binding_self_to_type_vars(False):
-        solution_with_upper_bounds = solve()
-    if all(map(refines, solution[0], solution_with_upper_bounds[0])):
-        return solution
-    return solution_with_upper_bounds
-
-
-def refines(inferred: Type | None, inferred_with_upper_bound: Type | None) -> bool:
-    if inferred is None:
-        return False
-    proper = get_proper_type(inferred)
-    if inferred_with_upper_bound is None:
-        return not isinstance(proper, (UninhabitedType, AnyType))
-    proper_with_upper_bound = get_proper_type(inferred_with_upper_bound)
-    if isinstance(proper, (UninhabitedType, AnyType)):
-        return type(proper) is type(proper_with_upper_bound)
-    return is_subtype(proper, proper_with_upper_bound)
-
-
 def protocol_self_binding_instance(left: TypeVarType, right: Instance) -> Instance | None:
     """Find where to look up members of protocol 'right' when self binds to 'left' itself.
 
@@ -1480,11 +1450,14 @@ def has_covariant_type_vars(info: TypeInfo) -> bool:
 
 
 def binds_self_trivially(member: SymbolTableNode | None) -> bool:
-    return (
-        member is not None
-        and isinstance(member.node, (FuncDef, OverloadedFuncDef))
-        and member.node.is_trivial_self
-    )
+    node = member.node if member is not None else None
+    if isinstance(node, (FuncDef, OverloadedFuncDef)):
+        return node.is_trivial_self
+    if isinstance(node, Decorator):
+        return node.func.is_trivial_self and not node.decorators
+    if isinstance(node, Var):
+        return node.type is not None and not has_type_vars(node.type)
+    return False
 
 
 def get_protocol_member(
@@ -2267,30 +2240,29 @@ def unify_generic_callable(
     if return_constraint_direction is None:
         return_constraint_direction = mypy.constraints.SUBTYPE_OF
 
-    def solve() -> tuple[list[Type | None], list[TypeVarLikeType]]:
-        # This code is hot in numerical libraries, so we use a faster inference
-        #  algorithm (that may give slightly worse results in rare cases).
-        keep_unions_old = type_state.keep_unions
-        type_state.keep_unions = True
-        try:
-            # There is some special logic for inference in callables, so better use
-            # them as wholes instead of picking separate arguments.
-            constraints = mypy.constraints.infer_constraints(
-                type.copy_modified(ret_type=UninhabitedType()),
-                target.copy_modified(ret_type=UninhabitedType()),
-                mypy.constraints.SUBTYPE_OF,
-                skip_neg_op=True,
+    # This code is hot in numerical libraries, so we use a faster inference
+    #  algorithm (that may give slightly worse results in rare cases).
+    keep_unions_old = type_state.keep_unions
+    type_state.keep_unions = True
+    try:
+        # There is some special logic for inference in callables, so better use
+        # them as wholes instead of picking separate arguments.
+        constraints = mypy.constraints.infer_constraints(
+            type.copy_modified(ret_type=UninhabitedType()),
+            target.copy_modified(ret_type=UninhabitedType()),
+            mypy.constraints.SUBTYPE_OF,
+            skip_neg_op=True,
+        )
+        if not ignore_return:
+            c = mypy.constraints.infer_constraints(
+                type.ret_type, target.ret_type, return_constraint_direction
             )
-            if not ignore_return:
-                c = mypy.constraints.infer_constraints(
-                    type.ret_type, target.ret_type, return_constraint_direction
-                )
-                constraints.extend(c)
-        finally:
-            type_state.keep_unions = keep_unions_old
-        return mypy.solve.solve_constraints(type.variables, constraints, allow_polymorphic=True)
-
-    inferred_vars, _ = solve_preferring_self_bound_to_type_vars(solve)
+            constraints.extend(c)
+    finally:
+        type_state.keep_unions = keep_unions_old
+    inferred_vars, _ = mypy.solve.solve_constraints(
+        type.variables, constraints, allow_polymorphic=True
+    )
     if None in inferred_vars:
         return None
     non_none_inferred_vars = cast(list[Type], inferred_vars)
