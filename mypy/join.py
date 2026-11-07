@@ -338,7 +338,7 @@ class TypeJoinVisitor(TypeVisitor[ProperType]):
             # Fix non-commutative joins
             return get_proper_type(join_types(self.s.upper_bound, t.upper_bound))
         elif joins_via_upper_bound(self.s):
-            return get_proper_type(join_types(t.upper_bound, self.s))
+            return get_proper_type(join_types(t.upper_bound, self.s, self.instance_joiner))
         else:
             return self.default(self.s)
 
