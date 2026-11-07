@@ -2887,7 +2887,7 @@ class A:
     x: int
 
 class B(A):
-    def __replace__(self, *, x: int = 0) -> A: ...
+    def __replace__(self, *, x: int = 0) -> A: ...  # E: Return type "A" of "__replace__" incompatible with return type "B" in supertype "A"
 
 class C(A):
     def __replace__(self, *, x: int = 0) -> "C": ...

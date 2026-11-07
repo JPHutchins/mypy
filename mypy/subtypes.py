@@ -32,6 +32,7 @@ from mypy.nodes import (
     FuncBase,
     FuncDef,
     OverloadedFuncDef,
+    SymbolTableNode,
     TypeInfo,
     Var,
 )
@@ -1425,21 +1426,19 @@ def protocol_self_binding_instance(left: TypeVarType, right: Instance) -> Instan
         return None
     bound = get_proper_type(left.upper_bound)
     instance = mypy.typeops.tuple_fallback(bound) if isinstance(bound, TupleType) else bound
-    if (
-        not isinstance(instance, Instance)
-        or instance.type.has_base(right.type.fullname)
-        or all(binds_self_trivially(instance.type, m) for m in right.type.protocol_members)
-    ):
+    if not isinstance(instance, Instance) or instance.type.has_base(right.type.fullname):
+        return None
+    members = [instance.type.get(name) for name in right.type.protocol_members]
+    if any(member is None for member in members) or all(map(binds_self_trivially, members)):
         return None
     return instance
 
 
-def binds_self_trivially(info: TypeInfo, name: str) -> bool:
-    node = info.get(name)
+def binds_self_trivially(member: SymbolTableNode | None) -> bool:
     return (
-        node is not None
-        and isinstance(node.node, (FuncDef, OverloadedFuncDef))
-        and node.node.is_trivial_self
+        member is not None
+        and isinstance(member.node, (FuncDef, OverloadedFuncDef))
+        and member.node.is_trivial_self
     )
 
 
