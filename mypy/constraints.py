@@ -1047,7 +1047,7 @@ class ConstraintBuilderVisitor(TypeVisitor[list[Constraint]]):
                 and self.direction == SUPERTYPE_OF
                 and len(template.type.inferring) < MAX_PROTOCOL_DEPTH
                 and not any(template == t for t in reversed(template.type.inferring))
-                and mypy.subtypes.is_protocol_implementation(instance, erased, skip=["__call__"])
+                and mypy.subtypes.is_protocol_implementation(actual, erased, skip=["__call__"])
             ):
                 template.type.inferring.append(template)
                 res = self.infer_constraints_from_protocol_members(

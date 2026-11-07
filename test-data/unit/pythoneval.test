@@ -1963,6 +1963,18 @@ _testDataclassReplace.py:10: error: Too few arguments for "replace"
 _testDataclassReplace.py:11: error: Argument "x" to "replace" of "A" has incompatible type "str"; expected "int"
 _testDataclassReplace.py:12: error: Unexpected keyword argument "q" for "replace" of "A"
 
+[case testCopyReplaceNamedTuple]
+# flags: --python-version=3.13
+import copy
+from typing import NamedTuple
+
+class A(NamedTuple):
+    x: int
+
+reveal_type(copy.replace(A(x=0), x=1))
+[out]
+_testCopyReplaceNamedTuple.py:8: note: Revealed type is "tuple[int, fallback=_testCopyReplaceNamedTuple.A]"
+
 [case testGenericInferenceWithTuple]
 from typing import TypeVar, Callable, Tuple
 

@@ -767,8 +767,13 @@ class SubtypeVisitor(TypeVisitor[bool]):
                     if is_protocol_implementation(left.fallback, right, skip=["__call__"]):
                         return True
             if right.type.is_protocol and left.is_type_obj():
-                instance_type = left.get_instance_type(force_fallback=True)
-                if isinstance(instance_type, Instance) and is_protocol_implementation(
+                precise_instance_type = left.get_instance_type()
+                instance_type = (
+                    precise_instance_type
+                    if isinstance(precise_instance_type, TupleType)
+                    else left.get_instance_type(force_fallback=True)
+                )
+                if isinstance(instance_type, (Instance, TupleType)) and is_protocol_implementation(
                     instance_type, right, proper_subtype=self.proper_subtype, class_obj=True
                 ):
                     return True
