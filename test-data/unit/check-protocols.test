@@ -4804,6 +4804,211 @@ class C:
 x: P[int] = C()
 [builtins fixtures/tuple.pyi]
 
+[case testTypeVarSelfTypeProtoDescriptorMember]
+from typing import Any, Callable, List, Protocol, TypeVar, overload
+
+R = TypeVar("R", covariant=True)
+X = TypeVar("X")
+S = TypeVar("S")
+
+class P(Protocol[R]):
+    def get(self) -> R: ...
+
+class Q(Protocol[R]):
+    @property
+    def get(self) -> R: ...
+
+def take(p: P[X], x: X) -> X: ...
+def qtake(p: Q[X], x: X) -> X: ...
+
+class ListDesc:
+    @overload
+    def __get__(self, obj: None, owner: Any) -> "ListDesc": ...
+    @overload
+    def __get__(self, obj: S, owner: Any) -> List[S]: ...
+    def __get__(self, obj: Any, owner: Any) -> Any: ...
+
+class MethodDesc:
+    @overload
+    def __get__(self, obj: None, owner: Any) -> "MethodDesc": ...
+    @overload
+    def __get__(self, obj: S, owner: Any) -> Callable[[], List[S]]: ...
+    def __get__(self, obj: Any, owner: Any) -> Any: ...
+
+def listing(f: Callable[..., Any]) -> Callable[[S], List[S]]: ...
+
+class C:
+    get = ListDesc()
+
+class D:
+    get = MethodDesc()
+
+class E:
+    @listing
+    def get(self) -> int: ...
+
+TC = TypeVar("TC", bound=C)
+TD = TypeVar("TD", bound=D)
+TE = TypeVar("TE", bound=E)
+
+def f(tc: TC, c: C, td: TD, d: D, te: TE, e: E) -> None:
+    reveal_type(qtake(tc, [c]))  # N: Revealed type is "builtins.list[__main__.C]"
+    reveal_type(take(td, [d]))  # N: Revealed type is "builtins.list[__main__.D]"
+    reveal_type(take(te, [e]))  # N: Revealed type is "builtins.list[__main__.E]"
+[builtins fixtures/property.pyi]
+
+[case testTypeVarSelfTypeProtoDecoratedProtocolMember]
+from typing import Any, Callable, List, Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+S = TypeVar("S")
+
+def listing(f: Callable[..., Any]) -> Callable[[S], List[S]]: ...
+
+class P(Protocol[R]):
+    def get(self) -> R: ...
+    @listing
+    def children(self) -> int: ...
+
+class C:
+    def get(self) -> Self: ...
+    def children(self) -> List["C"]: ...
+
+def take(p: P[R]) -> R: ...
+
+T = TypeVar("T", bound=C)
+
+def f(t: T) -> None:
+    reveal_type(take(t))  # N: Revealed type is "__main__.C"
+    x: P[C] = t
+    y: P[T] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "P[T]")
+[builtins fixtures/list.pyi]
+
+[case testTypeVarSelfTypeProtoDecoratedOptionalMember]
+from typing import Any, Callable, List, Optional, Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+S = TypeVar("S")
+
+def maybe(f: Callable[..., Any]) -> Optional[Callable[[S], List[S]]]: ...
+
+class P(Protocol[R]):
+    def get(self) -> R: ...
+    @maybe
+    def children(self) -> int: ...
+
+class C:
+    def get(self) -> Self: ...
+    children: Optional[Callable[[], List["C"]]] = None
+
+def take(p: P[R]) -> R: ...
+
+T = TypeVar("T", bound=C)
+
+def f(t: T) -> None:
+    reveal_type(take(t))  # N: Revealed type is "__main__.C"
+[builtins fixtures/list.pyi]
+
+[case testTypeVarSelfTypeProtoPropertyReturningDescriptor]
+from typing import Any, List, Protocol, TypeVar, overload
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+S = TypeVar("S")
+
+class ListDesc:
+    @overload
+    def __get__(self, obj: None, owner: Any) -> "ListDesc": ...
+    @overload
+    def __get__(self, obj: S, owner: Any) -> List[S]: ...
+    def __get__(self, obj: Any, owner: Any) -> Any: ...
+
+class P(Protocol[R]):
+    def get(self) -> R: ...
+    @property
+    def children(self) -> ListDesc: ...
+
+class C:
+    def get(self) -> Self: ...
+    @property
+    def children(self) -> List["C"]: ...
+
+def take(p: P[R]) -> R: ...
+
+T = TypeVar("T", bound=C)
+
+def f(t: T) -> None:
+    reveal_type(take(t))  # N: Revealed type is "__main__.C"
+    x: P[C] = t
+    y: P[T] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "P[T]")
+[builtins fixtures/property.pyi]
+
+[case testTypeVarSelfTypeProtoDescriptorThroughUnionGenericOrProperty]
+from typing import Any, Generic, List, Optional, Protocol, TypeVar, overload
+
+R = TypeVar("R", covariant=True)
+X = TypeVar("X")
+S = TypeVar("S")
+
+class Q(Protocol[R]):
+    @property
+    def get(self) -> R: ...
+
+def qtake(p: Q[X], x: X) -> X: ...
+
+class ListDesc:
+    @overload
+    def __get__(self, obj: None, owner: Any) -> "ListDesc": ...
+    @overload
+    def __get__(self, obj: S, owner: Any) -> List[S]: ...
+    def __get__(self, obj: Any, owner: Any) -> Any: ...
+
+class C:
+    get: Optional[ListDesc] = ListDesc()
+
+class G(Generic[X]):
+    get: X
+
+class H:
+    @property
+    def get(self) -> ListDesc: ...
+
+TC = TypeVar("TC", bound=C)
+TG = TypeVar("TG", bound=G[ListDesc])
+TH = TypeVar("TH", bound=H)
+
+def f(tc: TC, c: C, tg: TG, g: G[ListDesc], th: TH, h: H) -> None:
+    reveal_type(qtake(tc, [c]))  # N: Revealed type is "builtins.list[__main__.C] | None"
+    reveal_type(qtake(tg, [g]))  # N: Revealed type is "builtins.list[__main__.G[__main__.ListDesc]]"
+    reveal_type(qtake(th, [h]))  # N: Revealed type is "builtins.list[__main__.H]"
+[builtins fixtures/property.pyi]
+
+[case testTypeVarSelfTypeProtoUnionOfCallablesMember]
+from typing import List, Protocol, TypeVar
+
+R = TypeVar("R", covariant=True)
+X = TypeVar("X")
+S = TypeVar("S")
+
+class Q(Protocol[R]):
+    @property
+    def get(self) -> R: ...
+
+def qtake(p: Q[X], x: X) -> X: ...
+
+def ident(x: S) -> List[S]: ...
+
+class C:
+    get = ident if bool() else None
+
+TC = TypeVar("TC", bound=C)
+
+def f(tc: TC, c: C) -> None:
+    reveal_type(qtake(tc, c.get))  # N: Revealed type is "(def () -> builtins.list[__main__.C]) | None"
+[builtins fixtures/property.pyi]
+
 [case testLateSelfArgCheckRejectsProtoImpl]
 from typing import Generic, Protocol, TypeVar
 

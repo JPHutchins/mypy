@@ -4015,6 +4015,56 @@ tmp/b.py:26: error: Unsupported operand types for >= ("A" and "int")
 tmp/b.py:27: error: Unsupported operand types for < ("A" and "int")
 tmp/b.py:28: error: Unsupported operand types for <= ("A" and "int")
 
+[case testIncrementalTypeVarSelfTypeProtoDecoratedOverload-xfail]
+import b
+[file a.py]
+from typing import Callable, Protocol, TypeVar, overload
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+F = TypeVar("F", bound=Callable[..., object])
+
+def same(f: F) -> F: ...
+
+class P(Protocol[R]):
+    def get(self) -> R: ...
+    @overload
+    @same
+    def at(self, x: int) -> int: ...
+    @overload
+    @same
+    def at(self, x: str) -> str: ...
+
+class C:
+    def get(self) -> Self: ...
+    @overload
+    def at(self, x: int) -> int: ...
+    @overload
+    def at(self, x: str) -> str: ...
+    def at(self, x: object) -> object: ...
+[file b.py]
+from typing import TypeVar
+from a import C, P
+X = TypeVar("X")
+def take(p: P[X]) -> X: ...
+T = TypeVar("T", bound=C)
+def f(t: T) -> None:
+    reveal_type(take(t))
+[file b.py.2]
+from typing import TypeVar
+from a import C, P
+X = TypeVar("X")
+def take(p: P[X]) -> X: ...
+T = TypeVar("T", bound=C)
+def f(t: T) -> None:
+    reveal_type(take(t))
+    pass
+[builtins fixtures/tuple.pyi]
+[out1]
+tmp/b.py:7: note: Revealed type is "T`-1"
+[out2]
+tmp/b.py:7: note: Revealed type is "T`-1"
+
 [case testIncrementalDataclassesSubclassModified]
 from b import B
 B(5, 'foo')
