@@ -4750,6 +4750,290 @@ tmp/a.py:8: note:         def f(self) -> PNested
 tmp/a.py:8: note:     Got:
 tmp/a.py:8: note:         def f(self) -> CNested
 
+[case testTypeVarSelfTypeProtoDecoratedProtocolMember]
+from typing import Any, Callable, List, Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+S = TypeVar("S")
+
+def listing(f: Callable[..., Any]) -> Callable[[S], List[S]]: ...
+
+class P(Protocol[R]):
+    def get(self) -> R: ...
+    @listing
+    def children(self) -> int: ...
+
+class C:
+    def get(self) -> Self: ...
+    def children(self) -> List["C"]: ...
+
+def take(p: P[R]) -> R: ...
+
+T = TypeVar("T", bound=C)
+
+def f(t: T) -> None:
+    reveal_type(take(t))  # N: Revealed type is "__main__.C"
+    x: P[C] = t
+    y: P[T] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "P[T]")
+[builtins fixtures/list.pyi]
+
+[case testTypeVarSelfTypeProtoDecoratedOptionalMember]
+from typing import Any, Callable, List, Optional, Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+S = TypeVar("S")
+
+def maybe(f: Callable[..., Any]) -> Optional[Callable[[S], List[S]]]: ...
+
+class P(Protocol[R]):
+    def get(self) -> R: ...
+    @maybe
+    def children(self) -> int: ...
+
+class C:
+    def get(self) -> Self: ...
+    children: Optional[Callable[[], List["C"]]] = None
+
+def take(p: P[R]) -> R: ...
+
+T = TypeVar("T", bound=C)
+
+def f(t: T) -> None:
+    reveal_type(take(t))  # N: Revealed type is "__main__.C"
+[builtins fixtures/list.pyi]
+
+[case testTypeVarSelfTypeProtoDecoratedInstanceMethodKeepsSelf]
+from typing import Callable, Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R")
+R_co = TypeVar("R_co", covariant=True)
+
+def logged(f: Callable[..., R]) -> Callable[..., R]: ...
+
+class P(Protocol[R_co]):
+    def get(self) -> R_co: ...
+    @logged
+    def clone(self) -> Self: ...
+
+class C:
+    def get(self) -> Self: ...
+    def clone(self) -> "C": ...
+
+def take(p: P[R_co]) -> R_co: ...
+
+T = TypeVar("T", bound=C)
+
+def f(t: T) -> T:
+    return take(t)  # E: Incompatible return value type (got "C", expected "T")
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoDecoratedClassmethodKeepsSelf]
+from typing import Callable, Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R")
+R_co = TypeVar("R_co", covariant=True)
+
+def logged(f: Callable[..., R]) -> Callable[..., R]: ...
+
+class P(Protocol[R_co]):
+    def get(self) -> R_co: ...
+    @classmethod
+    @logged
+    def make(cls) -> Self: ...
+
+class C:
+    def get(self) -> Self: ...
+    @classmethod
+    def make(cls) -> "C": ...
+
+def take(p: P[R_co]) -> R_co: ...
+
+T = TypeVar("T", bound=C)
+
+def f(t: T) -> T:
+    return take(t)  # E: Incompatible return value type (got "C", expected "T")
+[builtins fixtures/classmethod.pyi]
+
+[case testTypeVarSelfTypeProtoDecoratedSelfParameterMember-xfail]
+from typing import Any, Callable, Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R")
+R_co = TypeVar("R_co", covariant=True)
+
+def takes_result(f: Callable[..., R]) -> Callable[[Any, R], None]: ...
+
+class P(Protocol[R_co]):
+    def get(self) -> R_co: ...
+    def put(self, x: "C") -> None: ...
+
+class C:
+    def get(self) -> Self: ...
+    @takes_result
+    def put(self) -> Self: ...
+
+def take(p: P[R_co]) -> R_co: ...
+
+T = TypeVar("T", bound=C)
+
+def f(t: T) -> None:
+    reveal_type(take(t))  # N: Revealed type is "T`-1"
+    x: P[C] = t
+    y: P[T] = t
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoDecoratorTypeUsesSelf-xfail]
+from typing import Any, Callable, Protocol, TypeVar
+from typing_extensions import Self
+
+R_co = TypeVar("R_co", covariant=True)
+
+class P(Protocol[R_co]):
+    def get(self) -> R_co: ...
+    def put(self, x: "C") -> None: ...
+
+class C:
+    def get(self) -> Self: ...
+    wrap: Callable[[Callable[..., Any]], Callable[[Self, Self], None]]
+    @wrap
+    def put(self) -> None: ...
+
+def take(p: P[R_co]) -> R_co: ...
+
+T = TypeVar("T", bound=C)
+
+def f(t: T) -> None:
+    reveal_type(take(t))  # N: Revealed type is "T`-1"
+    x: P[C] = t
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoOverloadWithSelfAnnotations]
+from typing import Any, Generic, Protocol, TypeVar, overload
+from typing_extensions import Self
+
+X = TypeVar("X")
+Y = TypeVar("Y", bound=str)
+R_co = TypeVar("R_co", covariant=True)
+
+class P(Protocol[R_co]):
+    def get(self) -> R_co: ...
+    def m(self) -> int: ...
+
+class C(Generic[X, Y]):
+    def get(self) -> Self: ...
+    @overload
+    def m(self: "C[Y, str]") -> int: ...
+    @overload
+    def m(self: "C[int, str]") -> str: ...
+    def m(self: Any) -> Any: ...
+
+T = TypeVar("T", bound=C[int, str])
+
+def f(t: T) -> None:
+    x: P[C[int, str]] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "P[C[int, str]]")
+    y: P[T] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "P[T]")
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoOverloadItemOrder]
+from typing import Any, Generic, Optional, Protocol, TypeVar, overload
+from typing_extensions import Self
+
+X = TypeVar("X")
+S = TypeVar("S", bound=str)
+R_co = TypeVar("R_co", covariant=True)
+V_co = TypeVar("V_co", covariant=True)
+
+class P(Protocol[R_co, V_co]):
+    def get(self) -> R_co: ...
+    def m(self) -> V_co: ...
+
+class C(Generic[X]):
+    def get(self) -> Self: ...
+    @overload
+    def m(self: "C[S]") -> Optional[S]: ...
+    @overload
+    def m(self: "C[int]") -> int: ...
+    def m(self: Any) -> Any: ...
+
+def second(p: P[R_co, V_co]) -> V_co: ...
+
+T = TypeVar("T", bound=C[int])
+
+def f(t: T) -> int:
+    reveal_type(second(t))  # N: Revealed type is "builtins.int"
+    return second(t) + 1
+[builtins fixtures/primitives.pyi]
+
+[case testTypeVarSelfTypeProtoDecoratedOverloadSelfArgument]
+from typing import Any, Callable, Generic, Protocol, TypeVar, overload
+from typing_extensions import Self
+
+X = TypeVar("X")
+Y = TypeVar("Y", bound=str)
+R_co = TypeVar("R_co", covariant=True)
+
+def as_y_str(f: Callable[..., int]) -> Callable[["C[Y, str]"], int]: ...
+def as_int_str(f: Callable[..., str]) -> Callable[["C[int, str]"], str]: ...
+
+class P(Protocol[R_co]):
+    def get(self) -> R_co: ...
+    def m(self) -> int: ...
+
+class C(Generic[X, Y]):
+    def get(self) -> Self: ...
+    @overload
+    @as_y_str
+    def m(self) -> int: ...
+    @overload
+    @as_int_str
+    def m(self) -> str: ...
+    def m(self) -> Any: ...
+
+T = TypeVar("T", bound=C[int, str])
+
+def f(t: T) -> None:
+    x: P[C[int, str]] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "P[C[int, str]]")
+    y: P[T] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "P[T]")
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoDecoratedOverloadChangesSelfArgument]
+from typing import Any, Callable, Generic, Protocol, TypeVar, overload
+from typing_extensions import Self
+
+X = TypeVar("X")
+Y = TypeVar("Y", bound=str)
+Z = TypeVar("Z", bound=str)
+R = TypeVar("R")
+R_co = TypeVar("R_co", covariant=True)
+
+def y_first(f: "Callable[[C[Any, Z]], R]") -> "Callable[[C[Z, Any]], R]": ...
+def keep(f: Callable[..., R]) -> Callable[..., R]: ...
+
+class P(Protocol[R_co]):
+    def get(self) -> R_co: ...
+    def m(self) -> int: ...
+
+class C(Generic[X, Y]):
+    def get(self) -> Self: ...
+    @overload
+    @y_first
+    def m(self) -> int: ...
+    @overload
+    @keep
+    def m(self) -> str: ...
+    def m(self) -> Any: ...
+
+T = TypeVar("T", bound=C[int, str])
+
+def f(t: T) -> None:
+    x: P[C[int, str]] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "P[C[int, str]]")
+    y: P[T] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "P[T]")
+[builtins fixtures/tuple.pyi]
+
 [case testProtocolCannotBeDisjointBase]
 from typing import Protocol
 from typing_extensions import disjoint_base
