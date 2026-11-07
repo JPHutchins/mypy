@@ -22,7 +22,9 @@ from mypy.nodes import (
     ARG_POS,
     ARG_STAR,
     ARG_STAR2,
+    COVARIANT,
     SYMBOL_FUNCBASE_TYPES,
+    VARIANCE_NOT_READY,
     Decorator,
     Expression,
     FuncBase,
@@ -1436,3 +1438,10 @@ def can_have_shared_disjoint_base(instances: list[Instance]) -> bool:
         else:
             return False
     return True
+
+
+def has_covariant_type_vars(info: TypeInfo) -> bool:
+    return any(
+        isinstance(tv, TypeVarType) and tv.variance in (COVARIANT, VARIANCE_NOT_READY)
+        for tv in info.defn.type_vars
+    )
