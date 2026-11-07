@@ -259,11 +259,20 @@ def join_types(s: Type, t: Type, instance_joiner: InstanceJoiner | None = None) 
     if isinstance(s, UninhabitedType) and not isinstance(t, UninhabitedType):
         s, t = t, s
 
+    if isinstance(s, TypeVarType) and joins_via_upper_bound(t):
+        s, t = t, s
+
     # Meets/joins require callable type normalization.
     s, t = normalize_callables(s, t)
 
     # Use a visitor to handle non-trivial cases.
     return t.accept(TypeJoinVisitor(s, instance_joiner))
+
+
+def joins_via_upper_bound(typ: ProperType) -> bool:
+    return isinstance(
+        typ, (Instance, TupleType, CallableType, Overloaded, TypedDictType, LiteralType, TypeType)
+    )
 
 
 class TypeJoinVisitor(TypeVisitor[ProperType]):
@@ -328,6 +337,8 @@ class TypeJoinVisitor(TypeVisitor[ProperType]):
                 )
             # Fix non-commutative joins
             return get_proper_type(join_types(self.s.upper_bound, t.upper_bound))
+        elif joins_via_upper_bound(self.s):
+            return get_proper_type(join_types(t.upper_bound, self.s, self.instance_joiner))
         else:
             return self.default(self.s)
 
