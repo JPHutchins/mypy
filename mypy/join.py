@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Final, overload
+from typing import overload
 
 import mypy.typeops
 from mypy.expandtype import expand_type
@@ -259,7 +259,7 @@ def join_types(s: Type, t: Type, instance_joiner: InstanceJoiner | None = None) 
     if isinstance(s, UninhabitedType) and not isinstance(t, UninhabitedType):
         s, t = t, s
 
-    if isinstance(s, TypeVarType) and isinstance(t, JOINS_VIA_UPPER_BOUND):
+    if isinstance(s, TypeVarType) and joins_via_upper_bound(t):
         s, t = t, s
 
     # Meets/joins require callable type normalization.
@@ -269,15 +269,10 @@ def join_types(s: Type, t: Type, instance_joiner: InstanceJoiner | None = None) 
     return t.accept(TypeJoinVisitor(s, instance_joiner))
 
 
-JOINS_VIA_UPPER_BOUND: Final = (
-    Instance,
-    TupleType,
-    CallableType,
-    Overloaded,
-    TypedDictType,
-    LiteralType,
-    TypeType,
-)
+def joins_via_upper_bound(typ: ProperType) -> bool:
+    return isinstance(
+        typ, (Instance, TupleType, CallableType, Overloaded, TypedDictType, LiteralType, TypeType)
+    )
 
 
 class TypeJoinVisitor(TypeVisitor[ProperType]):
@@ -342,8 +337,8 @@ class TypeJoinVisitor(TypeVisitor[ProperType]):
                 )
             # Fix non-commutative joins
             return get_proper_type(join_types(self.s.upper_bound, t.upper_bound))
-        elif isinstance(self.s, JOINS_VIA_UPPER_BOUND):
-            return get_proper_type(join_types(t.upper_bound, self.s))
+        elif joins_via_upper_bound(self.s):
+            return get_proper_type(join_types(t.upper_bound, self.s, self.instance_joiner))
         else:
             return self.default(self.s)
 

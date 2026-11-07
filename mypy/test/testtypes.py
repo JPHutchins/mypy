@@ -896,6 +896,14 @@ class JoinSuite(Suite):
         assert j.can_be_true
         assert j.can_be_false
 
+    def test_type_var_with_other_type_joins_via_upper_bound(self) -> None:
+        self.assert_join(self.fx.ub, self.fx.b, self.fx.b)
+        self.assert_join(self.fx.ub, self.fx.a, self.fx.a)
+        self.assert_join(self.fx.ub, self.fx.c, self.fx.a)
+        self.assert_join(self.fx.ub, self.fx.d, self.fx.o)
+        self.assert_join(self.fx.ub, self.fx.uc, self.fx.a)
+        self.assert_join(self.fx.ub, self.fx.ub, self.fx.ub)
+
     def test_other_mixed_types(self) -> None:
         # In general, joining unrelated types produces object.
         for t1 in [self.fx.a, self.fx.t, self.tuple(), self.callable(self.fx.a, self.fx.b)]:
