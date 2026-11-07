@@ -4820,6 +4820,377 @@ bad: Bad[str] = Bad()
 fail: SupportsFoo = bad  # E: Incompatible types in assignment (expression has type "Bad[str]", variable has type "SupportsFoo")
 [builtins fixtures/tuple.pyi]
 
+[case testTypeVarSelfTypeProtoPolymorphic]
+from typing import Callable, Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+X = TypeVar("X")
+Y = TypeVar("Y")
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+
+class C:
+    def rep(self) -> Self: ...
+
+def compose(f: Callable[[X], P[Y]]) -> Callable[[X], Y]: ...
+
+S = TypeVar("S", bound=C)
+def ident(s: S) -> S: ...
+
+reveal_type(compose(ident))  # N: Revealed type is "def (__main__.P[__main__.C]) -> __main__.C" \
+                             # E: Argument 1 to "compose" has incompatible type "Callable[[S], S]"; expected "Callable[[P[C]], P[C]]"
+reveal_type(compose(C.rep))  # N: Revealed type is "def (__main__.P[__main__.C]) -> __main__.C" \
+                             # E: Argument 1 to "compose" has incompatible type "Callable[[Self], Self]"; expected "Callable[[P[C]], P[C]]"
+
+def g(s: S) -> S:
+    return compose(ident)(s)  # E: Incompatible return value type (got "C", expected "S") \
+                              # E: Argument 1 to "compose" has incompatible type "Callable[[S], S]"; expected "Callable[[P[C]], P[C]]"
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoPolymorphicKeepsTypeVar-xfail]
+from typing import Callable, Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+X = TypeVar("X")
+Y = TypeVar("Y")
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+
+class C:
+    def rep(self) -> Self: ...
+
+def compose(f: Callable[[X], P[Y]]) -> Callable[[X], Y]: ...
+
+S = TypeVar("S", bound=C)
+
+def g(s: S) -> None:
+    reveal_type(compose(lambda q: s))  # N: Revealed type is "def [X] (X`2) -> S`-1"
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoGenericCallableArgument]
+from typing import Callable, Generic, Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+X = TypeVar("X")
+Y = TypeVar("Y")
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+
+def apply(f: Callable[[X], P[Y]], x: X) -> Y: ...
+def compose(f: Callable[[X], P[Y]]) -> Callable[[X], Y]: ...
+
+class C:
+    def rep(self) -> Self: ...
+
+class D(C): ...
+
+T = TypeVar("T", bound=C)
+
+class Holder(Generic[T]):
+    def get(self) -> T: ...
+    def m(self, other: "Holder[D]") -> None:
+        reveal_type(apply(Holder.get, other))  # N: Revealed type is "__main__.C"
+        reveal_type(apply(Holder.get, self))  # N: Revealed type is "__main__.C"
+
+S = TypeVar("S", bound=C)
+
+def ident(s: S) -> S:
+    reveal_type(compose(ident))  # N: Revealed type is "def (__main__.P[__main__.C]) -> __main__.C" \
+                                 # E: Argument 1 to "compose" has incompatible type "Callable[[S], S]"; expected "Callable[[P[C]], P[C]]"
+    return s
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoGenericCallableArgumentKeepsTypeVar-xfail]
+from typing import Callable, Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+X = TypeVar("X")
+Y = TypeVar("Y")
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+
+def take(p: P[Y]) -> Y: ...
+def call(f: Callable[[X], Y], x: X) -> Y: ...
+
+class C:
+    def rep(self) -> Self: ...
+
+S = TypeVar("S", bound=C)
+
+def f(s: S) -> None:
+    reveal_type(call(take, s))  # N: Revealed type is "S`-1"
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoGenericCallableWithBoundTypeVar]
+from typing import Callable, List, Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+
+class C:
+    def rep(self) -> Self: ...
+
+X = TypeVar("X", bound=C)
+Y = TypeVar("Y")
+S = TypeVar("S")
+
+def compose(f: Callable[[X], Y]) -> Callable[[X], Y]: ...
+def wrap(f: Callable[[X], Y]) -> Callable[[X], List[Y]]: ...
+def take(p: P[S]) -> S: ...
+
+def g() -> None:
+    reveal_type(compose(take))  # E: Value of type variable "X" of "compose" cannot be "P[Y]" \
+                                # N: Revealed type is "def [Y] (__main__.P[Y`3]) -> Y`3"
+    reveal_type(wrap(take))  # E: Value of type variable "X" of "wrap" cannot be "P[Y]" \
+                             # N: Revealed type is "def [Y] (__main__.P[Y`5]) -> builtins.list[Y`5]"
+[builtins fixtures/list.pyi]
+
+[case testTypeVarSelfTypeProtoGenericCallableWithBoundTypeVarKeepsTypeVar-xfail]
+from typing import Callable, Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+
+class C:
+    def rep(self) -> Self: ...
+
+X = TypeVar("X", bound=C)
+Y = TypeVar("Y")
+S = TypeVar("S")
+
+def apply(f: Callable[[X], Y], x: X) -> Y: ...
+def take(p: P[S]) -> S: ...
+
+T = TypeVar("T", bound=C)
+
+def g(t: T) -> None:
+    reveal_type(apply(take, t))  # N: Revealed type is "T`-1"
+[builtins fixtures/list.pyi]
+
+[case testTypeVarSelfTypeProtoSelfAnnotatedMethod]
+from typing import Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+T_contra = TypeVar("T_contra", contravariant=True)
+X = TypeVar("X")
+
+class SupportsRep(Protocol[R]):
+    def rep(self) -> R: ...
+
+class Merges(Protocol[T_contra]):
+    def merge(self, other: T_contra) -> None: ...
+
+class C:
+    def rep(self) -> Self: ...
+    def merge(self, other: Self) -> None: ...
+    def m(self: SupportsRep[X]) -> X: ...
+    def n(self: Merges[X], other: X) -> X: ...
+
+class D(C): ...
+
+T = TypeVar("T", bound=C)
+
+def f(t: T, c: C, d: D) -> None:
+    reveal_type(t.n(d))  # N: Revealed type is "__main__.C"
+    reveal_type(t.n(c))  # N: Revealed type is "__main__.C"
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoSelfAnnotatedMethodKeepsTypeVar-xfail]
+from typing import Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+X = TypeVar("X")
+
+class SupportsRep(Protocol[R]):
+    def rep(self) -> R: ...
+
+class C:
+    def rep(self) -> Self: ...
+    def m(self: SupportsRep[X]) -> X: ...
+
+T = TypeVar("T", bound=C)
+
+def f(t: T) -> None:
+    reveal_type(t.m())  # N: Revealed type is "T`-1"
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoSubtypingIndependentOfScope-xfail]
+from typing import Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+X = TypeVar("X")
+Y = TypeVar("Y")
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+
+class C:
+    def rep(self) -> Self: ...
+
+T = TypeVar("T", bound=C)
+
+class Runner(Protocol[Y]):
+    def run(self, y: Y) -> Y: ...
+
+class Impl:
+    def run(self, p: P[X]) -> X: ...
+
+def f(t: T, r: Runner[T] = Impl()) -> T:
+    x: Runner[T] = Impl()
+    return t
+
+def g(t: T) -> T:
+    x: Runner[T] = Impl()
+    return t
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoExtraChecks]
+# flags: --extra-checks
+from typing import Any, Callable, Protocol, TypeVar
+from typing_extensions import Concatenate, ParamSpec, Self
+
+P = ParamSpec("P")
+R = TypeVar("R", covariant=True)
+
+class A(Protocol[P, R]):
+    def foo(self, a: int, *args: P.args, **kwargs: P.kwargs) -> R: ...
+
+class C:
+    def foo(self, a: int, b: int, *args: Any, **kwargs: Any) -> Self: ...
+
+S = TypeVar("S", bound=C)
+
+def bar(s: S, f: Callable[P, None]) -> A[Concatenate[int, P], S]:
+    return s  # E: Incompatible return value type (got "S", expected "A[[int, **P], S]")
+[builtins fixtures/paramspec.pyi]
+
+[case testTypeVarSelfTypeProtoNestedCacheEntries]
+from typing import Generic, Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R")
+X = TypeVar("X", covariant=True)
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+    def get(self) -> "Q[R]": ...
+    def zzz(self) -> int: ...
+
+class Q(Protocol[R]):
+    def q(self) -> P[R]: ...
+
+class W(Protocol[R]):
+    def w(self) -> Q[R]: ...
+
+class D(Generic[X]):
+    def q(self) -> X: ...
+
+class C:
+    def rep(self) -> Self: ...
+    def get(self) -> D[Self]: ...
+    def zzz(self) -> str: ...
+
+T = TypeVar("T", bound=C)
+
+def f(t: T) -> None:
+    class E:
+        def w(self) -> D[T]: ...
+    a: P[T] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "P[T]")
+    e: W[T] = E()  # E: Incompatible types in assignment (expression has type "E", variable has type "W[T]") \
+                   # N: Following member(s) of "E" have conflicts: \
+                   # N:     Expected: \
+                   # N:         def w(self) -> Q[T] \
+                   # N:     Got: \
+                   # N:         def w(self) -> D[T]
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoNotCachedForUpperBound-xfail]
+from typing import Protocol, TypeVar
+
+R = TypeVar("R", covariant=True)
+T = TypeVar("T")
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+
+class Q(Protocol[R]):
+    def get(self) -> P[R]: ...
+
+class C:
+    def rep(self: T) -> T: ...
+
+class D:
+    def get(self) -> C: ...
+
+S = TypeVar("S", bound=C)
+
+def f(s: S) -> None:
+    ok: P[S] = s
+    bad: Q[S] = D()  # E: Incompatible types in assignment (expression has type "D", variable has type "Q[S]") \
+                     # N: Following member(s) of "D" have conflicts: \
+                     # N:     Expected: \
+                     # N:         def get(self) -> P[S] \
+                     # N:     Got: \
+                     # N:         def get(self) -> C
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoRecursiveMember]
+from typing import Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+    def other(self) -> P[R]: ...
+
+class C:
+    def rep(self) -> Self: ...
+    def other(self) -> C: ...
+
+S = TypeVar("S", bound=C)
+
+def f(s: S) -> None:
+    bad: P[S] = s  # E: Incompatible types in assignment (expression has type "S", variable has type "P[S]")
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoRecursiveMemberKeepsTypeVar-xfail]
+from typing import Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+    def other(self) -> P[R]: ...
+
+class D:
+    def rep(self) -> Self: ...
+    def other(self) -> Self: ...
+
+U = TypeVar("U", bound=D)
+
+def f(u: U) -> None:
+    ok: P[U] = u
+[builtins fixtures/tuple.pyi]
+
 [case testProtocolGenericSelfTypeInTypeArgumentBound]
 from typing import Generic, Protocol, TypeVar
 from b import Base
