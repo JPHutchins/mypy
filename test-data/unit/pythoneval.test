@@ -1998,7 +1998,7 @@ class A:
     items: Collection[Foo] = field(default_factory=list)
 [out]
 
-[case testCopyReplaceKeepsTypeVarAndSelf-xfail]
+[case testCopyReplaceKeepsTypeVarAndSelf]
 # flags: --python-version=3.13
 import copy
 from dataclasses import dataclass
