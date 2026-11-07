@@ -5382,3 +5382,58 @@ def f(t: T, c: C) -> None:
     reveal_type(take2(t, c))  # N: Revealed type is "__main__.C"
     ok: P[T] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "P[T]")
 [builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoProtocolUsesSelf]
+from typing import Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+
+class Proto(Protocol[R]):
+    def get(self) -> R: ...
+    def clone(self) -> Self: ...
+
+class C:
+    def get(self) -> Self: ...
+    def clone(self) -> "C": ...
+
+def f(p: Proto[R]) -> R: ...
+
+T = TypeVar("T", bound=C)
+
+def g(t: T, c: C) -> None:
+    reveal_type(f(c))  # N: Revealed type is "__main__.C"
+    reveal_type(f(t))  # N: Revealed type is "__main__.C"
+    x: Proto[C] = t
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoGenericCallableWithBoundTypeVar]
+from typing import Callable, List, Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+
+class C:
+    def rep(self) -> Self: ...
+
+X = TypeVar("X", bound=C)
+Y = TypeVar("Y")
+S = TypeVar("S")
+
+def apply(f: Callable[[X], Y], x: X) -> Y: ...
+def compose(f: Callable[[X], Y]) -> Callable[[X], Y]: ...
+def wrap(f: Callable[[X], Y]) -> Callable[[X], List[Y]]: ...
+def take(p: P[S]) -> S: ...
+
+T = TypeVar("T", bound=C)
+
+def g(t: T) -> None:
+    reveal_type(apply(take, t))  # N: Revealed type is "T`-1"
+    reveal_type(compose(take))  # E: Value of type variable "X" of "compose" cannot be "P[Y]" \
+                                # N: Revealed type is "def [Y] (__main__.P[Y`5]) -> Y`5"
+    reveal_type(wrap(take))  # E: Value of type variable "X" of "wrap" cannot be "P[Y]" \
+                             # N: Revealed type is "def [Y] (__main__.P[Y`7]) -> builtins.list[Y`7]"
+[builtins fixtures/list.pyi]

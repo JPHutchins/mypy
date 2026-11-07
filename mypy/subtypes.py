@@ -682,6 +682,7 @@ class SubtypeVisitor(TypeVisitor[bool]):
             return True
         return (
             isinstance(right, Instance)
+            and right.type.is_protocol
             and any(tv.id == left.id for tv in mypy.typeops.get_type_vars(right))
             and can_bind_self_to_type_var(left, right)
             and is_protocol_implementation(
@@ -1430,21 +1431,31 @@ def can_bind_self_to_type_var(left: TypeVarType, right: Instance) -> bool:
     if (
         not right.type.is_protocol
         or left.values
+        or left.id.is_meta_var()
         or left.id in type_state.callable_type_vars_being_solved
     ):
         return False
     bound = get_proper_type(left.upper_bound)
     instance = mypy.typeops.tuple_fallback(bound) if isinstance(bound, TupleType) else bound
-    if (
-        not isinstance(instance, Instance)
-        or instance.type.has_base(right.type.fullname)
-        or has_covariant_type_vars(instance.type)
-    ):
-        return False
-    members = [instance.type.get(name) for name in right.type.protocol_members]
-    return all(member is not None for member in members) and not all(
-        map(binds_self_trivially, members)
+    return (
+        isinstance(instance, Instance)
+        and not instance.type.has_base(right.type.fullname)
+        and not has_covariant_type_vars(instance.type)
+        and not any(mentions_self(right.type.get(name)) for name in right.type.protocol_members)
     )
+
+
+def mentions_self(member: SymbolTableNode | None) -> bool:
+    node = member.node if member is not None else None
+    if isinstance(node, (FuncDef, OverloadedFuncDef)):
+        return not node.is_trivial_self
+    if isinstance(node, Decorator):
+        return not node.func.is_trivial_self
+    if isinstance(node, Var):
+        return node.type is not None and any(
+            tv.id.is_self() for tv in mypy.typeops.get_type_vars(node.type)
+        )
+    return False
 
 
 def narrowest_self_binding(
@@ -1453,6 +1464,8 @@ def narrowest_self_binding(
     upper_bound = get_proper_type(type_var.upper_bound)
     if IS_SETTABLE in get_member_flags(member, protocol):
         return upper_bound
+    if binds_self_trivially(instance.type.get(member)):
+        return type_var
     bound_to_type_var = find_member(member, instance, type_var)
     bound_to_upper_bound = find_member(member, instance, upper_bound)
     if (

@@ -1123,12 +1123,10 @@ class ConstraintBuilderVisitor(TypeVisitor[list[Constraint]]):
         return res
 
     def visit_callable_type(self, template: CallableType) -> list[Constraint]:
-        with type_state.solving_callable_type_vars(
-            [tv.id for tv in self.actual.variables]
-            if isinstance(self.actual, CallableType)
-            else []
-        ):
-            return self.infer_against_callable_type(template)
+        if isinstance(self.actual, CallableType) and self.actual.variables:
+            with type_state.solving_callable_type_vars([tv.id for tv in self.actual.variables]):
+                return self.infer_against_callable_type(template)
+        return self.infer_against_callable_type(template)
 
     def infer_against_callable_type(self, template: CallableType) -> list[Constraint]:
         # Normalize callables before matching against each other.

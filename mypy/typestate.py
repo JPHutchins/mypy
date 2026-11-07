@@ -126,7 +126,6 @@ class TypeState:
     # Type variables of generic callables that constraint inference is matching against, so
     # still being solved for.
     callable_type_vars_being_solved: list[TypeVarId]
-    # Positive subtype cache entries are not recorded while this is nonzero.
     positive_subtype_cache_suppressions: int
 
     # N.B: We do all the accesses to these properties through
