@@ -379,8 +379,12 @@ def _infer_constraints(
     ):
         # Unless template is also a type variable (or a union that contains one), using the upper
         # bound for inference will usually give better result for actual that is a type variable.
-        if not isinstance(template, UnionType) or not any(
-            isinstance(t, TypeVarType) for t in template.items
+        if (
+            not isinstance(template, UnionType)
+            or not any(isinstance(t, TypeVarType) for t in template.items)
+        ) and not (
+            isinstance(template, Instance)
+            and mypy.subtypes.can_bind_self_to_type_var(actual, template)
         ):
             actual = get_proper_type(actual.upper_bound)
 
@@ -774,6 +778,12 @@ class ConstraintBuilderVisitor(TypeVisitor[list[Constraint]]):
 
     def visit_instance(self, template: Instance) -> list[Constraint]:
         original_actual = actual = self.actual
+        if (
+            isinstance(actual, TypeVarType)
+            and self.direction == SUPERTYPE_OF
+            and not actual.id.is_meta_var()
+        ):
+            actual = get_proper_type(actual.upper_bound)
         res: list[Constraint] = []
         if isinstance(actual, (CallableType, Overloaded)) and template.type.is_protocol:
             if "__call__" in template.type.protocol_members:
@@ -1083,8 +1093,13 @@ class ConstraintBuilderVisitor(TypeVisitor[list[Constraint]]):
         """
         res = []
         for member in protocol.type.protocol_members:
-            inst = mypy.subtypes.find_member(member, instance, subtype, class_obj=class_obj)
-            temp = mypy.subtypes.find_member(member, template, subtype)
+            member_subtype = (
+                mypy.subtypes.narrowest_self_binding(member, instance, subtype, protocol)
+                if isinstance(subtype, TypeVarType)
+                else subtype
+            )
+            inst = mypy.subtypes.find_member(member, instance, member_subtype, class_obj=class_obj)
+            temp = mypy.subtypes.find_member(member, template, member_subtype)
             if inst is None or temp is None:
                 if member == "__call__":
                     continue
@@ -1109,6 +1124,12 @@ class ConstraintBuilderVisitor(TypeVisitor[list[Constraint]]):
         return res
 
     def visit_callable_type(self, template: CallableType) -> list[Constraint]:
+        if isinstance(self.actual, CallableType) and self.actual.variables:
+            with type_state.solving_callable_type_vars([tv.id for tv in self.actual.variables]):
+                return self.infer_against_callable_type(template)
+        return self.infer_against_callable_type(template)
+
+    def infer_against_callable_type(self, template: CallableType) -> list[Constraint]:
         # Normalize callables before matching against each other.
         # Note that non-normalized callables can be created in annotations
         # using e.g. callback protocols.

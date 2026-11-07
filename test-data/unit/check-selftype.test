@@ -2396,3 +2396,32 @@ class Bar(Enum):
     def bar(cls) -> Bar:
         ...
 [builtins fixtures/classmethod.pyi]
+
+[case testSelfTypeDunderReplaceKeepsBoundTypeVar]
+from typing import Protocol, TypeVar
+from typing_extensions import ParamSpec, Self
+
+P = ParamSpec("P")
+R_co = TypeVar("R_co", covariant=True)
+
+class SupportsReplace(Protocol[P, R_co]):
+    def __replace__(self, /, *_: P.args, **changes: P.kwargs) -> R_co: ...
+
+def replace(obj: SupportsReplace[P, R_co], /, *_: P.args, **changes: P.kwargs) -> R_co: ...
+
+class Hand:
+    def __replace__(self, *, x: int = 0) -> Self: ...
+
+    def bumped(self) -> Self:
+        return replace(self, x=1)
+
+T = TypeVar("T", bound=Hand)
+
+def f(value: T) -> T:
+    reveal_type(value.__replace__)  # N: Revealed type is "def (*, x: builtins.int =) -> T`-1"
+    reveal_type(replace(value, x=1))  # N: Revealed type is "T`-1"
+    replace(value, x="no")  # E: Argument "x" to "replace" has incompatible type "str"; expected "int"
+    return replace(value, x=1)
+
+reveal_type(replace(Hand(), x=1))  # N: Revealed type is "__main__.Hand"
+[builtins fixtures/paramspec.pyi]

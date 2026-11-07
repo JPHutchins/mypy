@@ -3870,6 +3870,91 @@ class A:
 [out1]
 [out2]
 
+[case testIncrementalTypeVarSelfTypeProtoDecoratedOverload]
+import b
+[file a.py]
+from typing import Callable, Protocol, TypeVar, overload
+from typing_extensions import Self
+
+R = TypeVar("R", covariant=True)
+F = TypeVar("F", bound=Callable[..., object])
+
+def same(f: F) -> F: ...
+
+class P(Protocol[R]):
+    def get(self) -> R: ...
+    @overload
+    @same
+    def at(self, x: int) -> int: ...
+    @overload
+    @same
+    def at(self, x: str) -> str: ...
+
+class C:
+    def get(self) -> Self: ...
+    @overload
+    def at(self, x: int) -> int: ...
+    @overload
+    def at(self, x: str) -> str: ...
+    def at(self, x: object) -> object: ...
+[file b.py]
+from typing import TypeVar
+from a import C, P
+X = TypeVar("X")
+def take(p: P[X]) -> X: ...
+T = TypeVar("T", bound=C)
+def f(t: T) -> None:
+    reveal_type(take(t))
+[file b.py.2]
+from typing import TypeVar
+from a import C, P
+X = TypeVar("X")
+def take(p: P[X]) -> X: ...
+T = TypeVar("T", bound=C)
+def f(t: T) -> None:
+    reveal_type(take(t))
+    pass
+[builtins fixtures/tuple.pyi]
+[out1]
+tmp/b.py:7: note: Revealed type is "T`-1"
+[out2]
+tmp/b.py:7: note: Revealed type is "T`-1"
+
+[case testIncrementalDataclassesDunderReplaceSelfType]
+# flags: --python-version 3.13
+from b import f
+
+[file a.py]
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class A:
+    x: int
+
+[file b.py]
+from typing import TypeVar
+from a import A
+
+T = TypeVar("T", bound=A)
+
+def f(t: T) -> T:
+    return t.__replace__(x=1)
+
+[file b.py.2]
+from typing import TypeVar
+from a import A
+
+T = TypeVar("T", bound=A)
+
+def f(t: T) -> T:
+    reveal_type(t.__replace__)
+    return t.__replace__(x=1)
+
+[builtins fixtures/dataclasses.pyi]
+[out1]
+[out2]
+tmp/b.py:7: note: Revealed type is "def (*, x: builtins.int =) -> T`-1"
+
 [case testIncrementalDataclassesSubclassingCachedType]
 import b
 

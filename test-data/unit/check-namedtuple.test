@@ -1432,7 +1432,7 @@ def f(a: A, g: G[int], u: A | B, t: TA) -> None:
     reveal_type(rep(a))  # N: Revealed type is "tuple[builtins.int, fallback=__main__.A]"
     reveal_type(rep(g))  # N: Revealed type is "tuple[builtins.int, fallback=__main__.G[builtins.int]]"
     reveal_type(rep(u))  # N: Revealed type is "tuple[builtins.object]"
-    reveal_type(rep(t))  # N: Revealed type is "tuple[builtins.int, fallback=__main__.A]"
+    reveal_type(rep(t))  # N: Revealed type is "TA`-1"
 [builtins fixtures/tuple.pyi]
 [typing fixtures/typing-namedtuple.pyi]
 
@@ -1473,6 +1473,59 @@ class A(NamedTuple):
 
 reveal_type(replace(A(x=0), x=1))  # N: Revealed type is "tuple[builtins.int, fallback=__main__.A]"
 replace(A(x=0), x="no")  # E: Argument "x" to "replace" has incompatible type "str"; expected "int"
+[builtins fixtures/tuple.pyi]
+[typing fixtures/typing-namedtuple.pyi]
+
+[case testNamedTupleDunderReplaceKeepsBoundTypeVar]
+# flags: --python-version 3.13
+from typing import NamedTuple, TypeVar
+from typing_extensions import ParamSpec, Protocol, Self
+
+P = ParamSpec("P")
+R_co = TypeVar("R_co", covariant=True)
+
+class SupportsReplace(Protocol[P, R_co]):
+    def __replace__(self, /, *_: P.args, **changes: P.kwargs) -> R_co: ...
+
+def replace(obj: SupportsReplace[P, R_co], /, *_: P.args, **changes: P.kwargs) -> R_co: ...
+
+class A(NamedTuple):
+    x: int
+
+    def bumped(self) -> Self:
+        return replace(self, x=1)
+
+T = TypeVar("T", bound=A)
+
+def f(value: T) -> T:
+    reveal_type(replace(value, x=1))  # N: Revealed type is "T`-1"
+    replace(value, x="no")  # E: Argument "x" to "replace" has incompatible type "str"; expected "int"
+    return replace(value, x=1)
+[builtins fixtures/tuple.pyi]
+[typing fixtures/typing-namedtuple.pyi]
+
+[case testNamedTupleDunderReplaceCovariantGeneric]
+# flags: --python-version 3.13
+from typing import Generic, NamedTuple, TypeVar
+from typing_extensions import ParamSpec, Protocol
+
+P = ParamSpec("P")
+R_co = TypeVar("R_co", covariant=True)
+
+class SupportsReplace(Protocol[P, R_co]):
+    def __replace__(self, /, *_: P.args, **changes: P.kwargs) -> R_co: ...
+
+def replace(obj: SupportsReplace[P, R_co], /, *_: P.args, **changes: P.kwargs) -> R_co: ...
+
+V_co = TypeVar("V_co", covariant=True)
+
+class NT(NamedTuple, Generic[V_co]):
+    v: V_co
+
+N = TypeVar("N", bound=NT[object])
+
+def f(n: N) -> N:
+    return replace(n, v="s")  # E: Incompatible return value type (got "NT[object]", expected "N")
 [builtins fixtures/tuple.pyi]
 [typing fixtures/typing-namedtuple.pyi]
 

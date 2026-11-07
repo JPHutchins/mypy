@@ -32,6 +32,7 @@ from mypy.nodes import (
     FuncBase,
     FuncDef,
     OverloadedFuncDef,
+    SymbolTableNode,
     TypeInfo,
     Var,
 )
@@ -676,7 +677,17 @@ class SubtypeVisitor(TypeVisitor[bool]):
             return self._is_subtype(left.upper_bound, right.upper_bound)
         if left.values and self._is_subtype(UnionType.make_union(left.values), right):
             return True
-        return self._is_subtype(left.upper_bound, self.right)
+        if self._is_subtype(left.upper_bound, self.right):
+            return True
+        return (
+            isinstance(right, Instance)
+            and right.type.is_protocol
+            and any(tv.id == left.id for tv in mypy.typeops.get_type_vars(right))
+            and can_bind_self_to_type_var(left, right)
+            and is_protocol_implementation(
+                left, right, proper_subtype=self.proper_subtype, options=self.options
+            )
+        )
 
     def visit_param_spec(self, left: ParamSpecType) -> bool:
         right = self.right
@@ -1262,17 +1273,18 @@ class SubtypeVisitor(TypeVisitor[bool]):
 
 
 T = TypeVar("T", bound=Type)
+U = TypeVar("U", bound=Type)
 
 
 @contextmanager
-def pop_on_exit(stack: list[tuple[T, T]], left: T, right: T) -> Iterator[None]:
+def pop_on_exit(stack: list[tuple[T, U]], left: T, right: U) -> Iterator[None]:
     stack.append((left, right))
     yield
     stack.pop()
 
 
 def is_protocol_implementation(
-    left: Instance | TupleType,
+    left: Instance | TupleType | TypeVarType,
     right: Instance,
     proper_subtype: bool = False,
     class_obj: bool = False,
@@ -1299,9 +1311,13 @@ def is_protocol_implementation(
     assert right.type.is_protocol
     if skip is None:
         skip = []
-    # Preserve original left type for precise self-type binding. Only tuple types are
-    # supported for now.
+    # Preserve original left type for precise self-type binding. Only tuple types and
+    # type variables bound to instances or tuple types are supported for now.
     original_left = left
+    if isinstance(left, TypeVarType):
+        bound = get_proper_type(left.upper_bound)
+        assert isinstance(bound, (Instance, TupleType))
+        left = bound
     if isinstance(left, TupleType):
         left = mypy.typeops.tuple_fallback(left)
     # We need to record this check to generate protocol fine-grained dependencies.
@@ -1318,20 +1334,29 @@ def is_protocol_implementation(
     assuming = right.type.assuming_proper if proper_subtype else right.type.assuming
     if len(assuming) > MAX_PROTOCOL_DEPTH:
         return True
+    assumed_left = original_left if isinstance(original_left, TypeVarType) else left
     for l, r in reversed(assuming):
-        if l == left and r == right:
+        if l == assumed_left and r == right:
             return True
-    with pop_on_exit(assuming, left, right):
+    with (
+        pop_on_exit(assuming, assumed_left, right),
+        type_state.suppressing_positive_subtype_cache(isinstance(original_left, TypeVarType)),
+    ):
         for member in right.type.protocol_members:
             if member in members_not_to_check:
                 continue
             ignore_names = member != "__call__"  # __call__ can be passed kwargs
+            member_left = (
+                narrowest_self_binding(member, left, original_left, right)
+                if isinstance(original_left, TypeVarType)
+                else original_left
+            )
             # The third argument below indicates to what self type is bound.
             # We always bind self to the subtype. (Similarly to nominal types).
-            supertype = find_member(member, right, original_left)
+            supertype = find_member(member, right, member_left)
             assert supertype is not None
 
-            subtype = get_protocol_member(left, original_left, member, class_obj)
+            subtype = get_protocol_member(left, member_left, member, class_obj)
             # Useful for debugging:
             # print(member, 'of', left, 'has type', subtype)
             # print(member, 'of', right, 'has type', supertype)
@@ -1358,10 +1383,10 @@ def is_protocol_implementation(
             if IS_SETTABLE in superflags:
                 # Check opposite direction for settable attributes.
                 if IS_EXPLICIT_SETTER in superflags:
-                    supertype = find_member(member, right, original_left, is_lvalue=True)
+                    supertype = find_member(member, right, member_left, is_lvalue=True)
                 if IS_EXPLICIT_SETTER in subflags:
                     subtype = get_protocol_member(
-                        left, original_left, member, class_obj, is_lvalue=True
+                        left, member_left, member, class_obj, is_lvalue=True
                     )
                 # At this point we know attribute is present on subtype, otherwise we
                 # would return False above.
@@ -1396,8 +1421,81 @@ def is_protocol_implementation(
         subtype_context=SubtypeContext(ignore_pos_arg_names=ignore_names),
         proper_subtype=proper_subtype,
     )
-    type_state.record_subtype_cache_entry(subtype_kind, left, right)
+    if not isinstance(original_left, TypeVarType):
+        type_state.record_subtype_cache_entry(subtype_kind, left, right)
     return True
+
+
+def can_bind_self_to_type_var(left: TypeVarType, right: Instance) -> bool:
+    if (
+        not right.type.is_protocol
+        or left.values
+        or left.id.is_meta_var()
+        or left.id in type_state.callable_type_vars_being_solved
+    ):
+        return False
+    bound = get_proper_type(left.upper_bound)
+    instance = mypy.typeops.tuple_fallback(bound) if isinstance(bound, TupleType) else bound
+    return (
+        isinstance(instance, Instance)
+        and not instance.type.has_base(right.type.fullname)
+        and not has_covariant_type_vars(instance.type)
+        and not any(depends_on_self(right.type.get(name)) for name in right.type.protocol_members)
+    )
+
+
+def depends_on_self(member: SymbolTableNode | None) -> bool:
+    node = member.node if member is not None else None
+    if isinstance(node, FuncDef):
+        return not node.is_trivial_self
+    if isinstance(node, (OverloadedFuncDef, Decorator, Var)) and node.type is not None:
+        return type_depends_on_self(node.type)
+    return True
+
+
+def type_depends_on_self(typ: Type) -> bool:
+    proper = get_proper_type(typ)
+    return (
+        is_descriptor(proper)
+        or any(tv.id.is_self() for tv in mypy.typeops.get_all_type_vars(proper))
+        or isinstance(proper, FunctionLike)
+        and any(self_arg_mentions_own_type_vars(item) for item in proper.items)
+    )
+
+
+def self_arg_mentions_own_type_vars(method: CallableType) -> bool:
+    self_ids = (
+        {tv.id for tv in mypy.typeops.get_all_type_vars(method.arg_types[0])}
+        if method.arg_types
+        else set()
+    )
+    return any(tv.id in self_ids for tv in method.variables)
+
+
+def narrowest_self_binding(
+    member: str, instance: Instance, type_var: TypeVarType, protocol: Instance
+) -> Type:
+    upper_bound = get_proper_type(type_var.upper_bound)
+    if IS_SETTABLE in get_member_flags(member, protocol):
+        return upper_bound
+    if not depends_on_self(instance.type.get(member)):
+        return type_var
+    bound_to_type_var = find_member(member, instance, type_var)
+    bound_to_upper_bound = find_member(member, instance, upper_bound)
+    if (
+        bound_to_type_var is None
+        or bound_to_upper_bound is None
+        or is_subtype(bound_to_type_var, bound_to_upper_bound)
+    ):
+        return type_var
+    return upper_bound
+
+
+def has_covariant_type_vars(info: TypeInfo) -> bool:
+    return any(
+        isinstance(tv, TypeVarType) and tv.variance in (COVARIANT, VARIANCE_NOT_READY)
+        for tv in info.defn.type_vars
+    )
 
 
 def get_protocol_member(
