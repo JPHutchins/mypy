@@ -127,7 +127,11 @@ class DataclassAttribute:
         self._api = api
 
     def to_argument(
-        self, current_info: TypeInfo, *, of: Literal["__init__", "replace", "__post_init__"]
+        self,
+        current_info: TypeInfo,
+        *,
+        of: Literal["__init__", "replace", "__post_init__"],
+        self_type: Type | None = None,
     ) -> Argument:
         if of == "__init__":
             arg_kind = ARG_POS
@@ -154,13 +158,13 @@ class DataclassAttribute:
             # for the sake of type-checking is unpleasant.
             arg_kind = ARG_POS
         return Argument(
-            variable=self.to_var(current_info),
-            type_annotation=self.expand_type(current_info),
+            variable=self.to_var(current_info, self_type),
+            type_annotation=self.expand_type(current_info, self_type),
             initializer=EllipsisExpr() if self.has_default else None,  # Only used by stubgen
             kind=arg_kind,
         )
 
-    def expand_type(self, current_info: TypeInfo) -> Type | None:
+    def expand_type(self, current_info: TypeInfo, self_type: Type | None = None) -> Type | None:
         if self.type is not None and self.info.self_type is not None:
             # In general, it is not safe to call `expand_type()` during semantic analysis,
             # however this plugin is called very late, so all types should be fully ready.
@@ -168,12 +172,12 @@ class DataclassAttribute:
             # we serialize attributes).
             with state.strict_optional_set(self._api.options.strict_optional):
                 return expand_type(
-                    self.type, {self.info.self_type.id: fill_typevars(current_info)}
+                    self.type, {self.info.self_type.id: self_type or fill_typevars(current_info)}
                 )
         return self.type
 
-    def to_var(self, current_info: TypeInfo) -> Var:
-        return Var(self.alias or self.name, self.expand_type(current_info))
+    def to_var(self, current_info: TypeInfo, self_type: Type | None = None) -> Var:
+        return Var(self.alias or self.name, self.expand_type(current_info, self_type))
 
     def serialize(self) -> JsonDict:
         assert self.type
@@ -402,11 +406,6 @@ class DataclassTransformer:
 
     def _add_dunder_replace(self, attributes: list[DataclassAttribute]) -> None:
         """Add a `__replace__` method to the class, which is used to replace attributes in the `copy` module."""
-        args = [
-            attr.to_argument(self._cls.info, of="replace")
-            for attr in attributes
-            if attr.is_in_init
-        ]
         self_type = (
             None
             if has_covariant_type_vars(self._cls.info)
@@ -423,7 +422,11 @@ class DataclassTransformer:
             self._api,
             self._cls,
             "__replace__",
-            args=args,
+            args=[
+                attr.to_argument(self._cls.info, of="replace", self_type=self_type)
+                for attr in attributes
+                if attr.is_in_init
+            ],
             return_type=self_type or fill_typevars(self._cls.info),
             self_type=self_type,
             tvar_def=self_type,

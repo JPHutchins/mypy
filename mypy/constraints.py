@@ -777,6 +777,12 @@ class ConstraintBuilderVisitor(TypeVisitor[list[Constraint]]):
 
     def visit_instance(self, template: Instance) -> list[Constraint]:
         original_actual = actual = self.actual
+        if (
+            isinstance(actual, TypeVarType)
+            and self.direction == SUPERTYPE_OF
+            and mypy.subtypes.can_bind_self_to_type_var(actual, template)
+        ):
+            actual = get_proper_type(actual.upper_bound)
         res: list[Constraint] = []
         if isinstance(actual, (CallableType, Overloaded)) and template.type.is_protocol:
             if "__call__" in template.type.protocol_members:
@@ -1041,32 +1047,27 @@ class ConstraintBuilderVisitor(TypeVisitor[list[Constraint]]):
             return res
         elif isinstance(actual, TupleType) and self.direction == SUPERTYPE_OF:
             instance = mypy.typeops.tuple_fallback(actual)
+            erased = erase_typevars(template)
+            assert isinstance(erased, ProperType) and isinstance(erased, Instance)
             # Special-case protocols before using fallback to get more precise constraints
             # for custom tuple types like NamedTuples.
-            protocol_res = self.infer_protocol_constraints_binding_self(template, actual, instance)
-            if protocol_res is not None:
-                return protocol_res
+            if (
+                template.type.is_protocol
+                and self.direction == SUPERTYPE_OF
+                and len(template.type.inferring) < MAX_PROTOCOL_DEPTH
+                and not any(template == t for t in reversed(template.type.inferring))
+                and mypy.subtypes.is_protocol_implementation(actual, erased, skip=["__call__"])
+            ):
+                template.type.inferring.append(template)
+                res = self.infer_constraints_from_protocol_members(
+                    instance, template, original_actual, template
+                )
+                template.type.inferring.pop()
+                return res
             return infer_constraints(template, instance, self.direction)
         elif isinstance(actual, TypeVarType):
             if not actual.values and not actual.id.is_meta_var():
-                bound_to_upper_bound = infer_constraints(
-                    template, actual.upper_bound, self.direction
-                )
-                instance = (
-                    self_binding_instance(template, actual)
-                    if self.direction == SUPERTYPE_OF
-                    else None
-                )
-                bound_to_type_var = (
-                    None
-                    if instance is None
-                    else self.infer_protocol_constraints_binding_self(template, actual, instance)
-                )
-                if bound_to_type_var is None:
-                    return bound_to_upper_bound
-                return [c for c in bound_to_type_var if c.op == SUPERTYPE_OF] + [
-                    c for c in bound_to_upper_bound if c.op == SUBTYPE_OF
-                ]
+                return infer_constraints(template, actual.upper_bound, self.direction)
             return []
         elif isinstance(actual, ParamSpecType):
             return infer_constraints(template, actual.upper_bound, self.direction)
@@ -1074,29 +1075,6 @@ class ConstraintBuilderVisitor(TypeVisitor[list[Constraint]]):
             raise NotImplementedError
         else:
             return []
-
-    def infer_protocol_constraints_binding_self(
-        self, template: Instance, self_type: TupleType | TypeVarType, instance: Instance
-    ) -> list[Constraint] | None:
-        """Infer constraints against protocol 'template', binding self to 'self_type'.
-
-        The 'instance' is the fallback of 'self_type' used to look up members.
-        Return None if this special case doesn't apply.
-        """
-        if not (
-            template.type.is_protocol
-            and len(template.type.inferring) < MAX_PROTOCOL_DEPTH
-            and not any(template == t for t in reversed(template.type.inferring))
-        ):
-            return None
-        erased = erase_typevars(template)
-        assert isinstance(erased, ProperType) and isinstance(erased, Instance)
-        if not mypy.subtypes.is_protocol_implementation(self_type, erased, skip=["__call__"]):
-            return None
-        template.type.inferring.append(template)
-        res = self.infer_constraints_from_protocol_members(instance, template, self_type, template)
-        template.type.inferring.pop()
-        return res
 
     def infer_constraints_from_protocol_members(
         self,
@@ -1114,8 +1092,13 @@ class ConstraintBuilderVisitor(TypeVisitor[list[Constraint]]):
         """
         res = []
         for member in protocol.type.protocol_members:
-            inst = mypy.subtypes.find_member(member, instance, subtype, class_obj=class_obj)
-            temp = mypy.subtypes.find_member(member, template, subtype)
+            member_subtype = (
+                mypy.subtypes.narrowest_self_binding(member, instance, subtype, protocol)
+                if isinstance(subtype, TypeVarType)
+                else subtype
+            )
+            inst = mypy.subtypes.find_member(member, instance, member_subtype, class_obj=class_obj)
+            temp = mypy.subtypes.find_member(member, template, member_subtype)
             if inst is None or temp is None:
                 if member == "__call__":
                     continue
@@ -1849,13 +1832,3 @@ def filter_imprecise_kinds(cs: list[Constraint]) -> list[Constraint]:
         if not isinstance(c.target, Parameters) or not c.target.imprecise_arg_kinds:
             new_cs.append(c)
     return new_cs
-
-
-def self_binding_instance(template: Instance, actual: TypeVarType) -> Instance | None:
-    """Find where to look up members of protocol 'template' when self binds to 'actual'.
-
-    Return None when self binds to the upper bound of 'actual' instead.
-    """
-    if not template.type.is_protocol or actual.id in type_state.callable_type_vars_being_solved:
-        return None
-    return mypy.subtypes.protocol_self_binding_instance(actual, template)

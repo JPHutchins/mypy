@@ -5032,7 +5032,7 @@ TV = TypeVar("TV", bound=V)
 
 def g(a: TV, b: V) -> None:
     reveal_type(add(a, b))  # N: Revealed type is "__main__.V"
-    reveal_type(add(a, a))  # N: Revealed type is "TV`-1"
+    reveal_type(add(a, a))  # N: Revealed type is "__main__.V"
 [builtins fixtures/tuple.pyi]
 
 [case testTypeVarSelfTypeProtoPolymorphic]
@@ -5227,8 +5227,8 @@ def f(p: Proto[R]) -> R: ...
 T = TypeVar("T", bound=C)
 
 def g(t: T) -> None:
-    reveal_type(f(t))  # N: Revealed type is "__main__.C"
-    x: Proto[T] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "Proto[T]")
+    reveal_type(f(t))  # N: Revealed type is "T`-1"
+    x: Proto[T] = t
     y: Proto[C] = t
 [builtins fixtures/tuple.pyi]
 
@@ -5314,4 +5314,71 @@ def f(t: T, r: Runner[T] = Impl()) -> T:
 def g(t: T) -> T:
     x: Runner[T] = Impl()
     return t
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoNonCovariantSelfMember]
+from typing import Callable, List, Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R")
+R_co = TypeVar("R_co", covariant=True)
+X = TypeVar("X")
+
+class P(Protocol[R]):
+    def get(self) -> R: ...
+    def put(self, x: R) -> None: ...
+
+class Q(Protocol[R_co]):
+    def get(self) -> R_co: ...
+
+class C:
+    def get(self) -> List[Self]: ...
+    def put(self, x: List["C"]) -> None: ...
+
+class D:
+    def get(self) -> List[Self]: ...
+    def name(self) -> str: ...
+
+class CB:
+    def get(self) -> Callable[[Self], None]: ...
+
+def take(p: P[X]) -> X: ...
+def tq(p: Q[X], x: X) -> X: ...
+
+T = TypeVar("T", bound=C)
+TD = TypeVar("TD", bound=D)
+TC = TypeVar("TC", bound=CB)
+
+def f(t: T, td: TD, tc: TC, d: D, cb: CB, fn: Callable[[CB], None]) -> None:
+    reveal_type(take(t))  # N: Revealed type is "builtins.list[__main__.C]"
+    kids = tq(td, [d])
+    reveal_type(kids)  # N: Revealed type is "builtins.list[__main__.D]"
+    kids[0].name()
+    z = tq(tc, fn)
+    reveal_type(z)  # N: Revealed type is "def (__main__.CB)"
+    z(cb)
+[builtins fixtures/list.pyi]
+
+[case testTypeVarSelfTypeProtoSettableSelfMember]
+from typing import Protocol, TypeVar
+from typing_extensions import Self
+
+R = TypeVar("R")
+X = TypeVar("X")
+
+class P(Protocol[R]):
+    nxt: R
+
+class C:
+    nxt: Self
+
+def take(p: P[X]) -> X: ...
+def take2(p: P[X], x: X) -> X: ...
+
+T = TypeVar("T", bound=C)
+
+def f(t: T, c: C) -> None:
+    reveal_type(take(t))  # N: Revealed type is "__main__.C"
+    reveal_type(take2(t, c))  # N: Revealed type is "__main__.C"
+    ok: P[T] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "P[T]")
 [builtins fixtures/tuple.pyi]

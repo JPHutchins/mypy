@@ -2966,9 +2966,16 @@ class Node:
 T = TypeVar("T", bound=Node)
 
 def f(t: T) -> T:
-    reveal_type(replace(t, parent=None))  # N: Revealed type is "T`-1"
-    replace(t, parent=Node("x"))
-    return replace(t, name="n")
+    reveal_type(replace(t, parent=None))  # N: Revealed type is "__main__.Node"
+    reveal_type(t.__replace__)  # N: Revealed type is "def (*, name: builtins.str =, parent: T`-1 | None =) -> T`-1"
+    t.__replace__(parent=Node("x"))  # E: Argument "parent" to "__replace__" of "Node" has incompatible type "Node"; expected "T | None"
+    return replace(t, name="n")  # E: Incompatible return value type (got "Node", expected "T")
+
+@dataclass(frozen=True)
+class Sub(Node): ...
+
+Sub("a").__replace__(parent=Sub("b"))
+Sub("a").__replace__(parent=Node("b"))  # E: Argument "parent" to "__replace__" of "Sub" has incompatible type "Node"; expected "Sub | None"
 [builtins fixtures/dataclasses.pyi]
 
 [case testDunderReplaceKeepsBoundTypeVarDeferred]
