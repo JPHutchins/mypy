@@ -676,7 +676,16 @@ class SubtypeVisitor(TypeVisitor[bool]):
             return self._is_subtype(left.upper_bound, right.upper_bound)
         if left.values and self._is_subtype(UnionType.make_union(left.values), right):
             return True
-        return self._is_subtype(left.upper_bound, self.right)
+        if self._is_subtype(left.upper_bound, self.right):
+            return True
+        return (
+            isinstance(right, Instance)
+            and protocol_self_binding_instance(left, right) is not None
+            and any(tv.id == left.id for tv in mypy.typeops.get_type_vars(right))
+            and is_protocol_implementation(
+                left, right, proper_subtype=self.proper_subtype, options=self.options
+            )
+        )
 
     def visit_param_spec(self, left: ParamSpecType) -> bool:
         right = self.right
@@ -1262,17 +1271,18 @@ class SubtypeVisitor(TypeVisitor[bool]):
 
 
 T = TypeVar("T", bound=Type)
+U = TypeVar("U", bound=Type)
 
 
 @contextmanager
-def pop_on_exit(stack: list[tuple[T, T]], left: T, right: T) -> Iterator[None]:
+def pop_on_exit(stack: list[tuple[T, U]], left: T, right: U) -> Iterator[None]:
     stack.append((left, right))
     yield
     stack.pop()
 
 
 def is_protocol_implementation(
-    left: Instance | TupleType,
+    left: Instance | TupleType | TypeVarType,
     right: Instance,
     proper_subtype: bool = False,
     class_obj: bool = False,
@@ -1299,9 +1309,13 @@ def is_protocol_implementation(
     assert right.type.is_protocol
     if skip is None:
         skip = []
-    # Preserve original left type for precise self-type binding. Only tuple types are
-    # supported for now.
+    # Preserve original left type for precise self-type binding. Only tuple types and
+    # type variables bound to instances or tuple types are supported for now.
     original_left = left
+    if isinstance(left, TypeVarType):
+        bound = get_proper_type(left.upper_bound)
+        assert isinstance(bound, (Instance, TupleType))
+        left = bound
     if isinstance(left, TupleType):
         left = mypy.typeops.tuple_fallback(left)
     # We need to record this check to generate protocol fine-grained dependencies.
@@ -1318,10 +1332,11 @@ def is_protocol_implementation(
     assuming = right.type.assuming_proper if proper_subtype else right.type.assuming
     if len(assuming) > MAX_PROTOCOL_DEPTH:
         return True
+    assumed_left = original_left if isinstance(original_left, TypeVarType) else left
     for l, r in reversed(assuming):
-        if l == left and r == right:
+        if l == assumed_left and r == right:
             return True
-    with pop_on_exit(assuming, left, right):
+    with pop_on_exit(assuming, assumed_left, right):
         for member in right.type.protocol_members:
             if member in members_not_to_check:
                 continue
@@ -1396,8 +1411,36 @@ def is_protocol_implementation(
         subtype_context=SubtypeContext(ignore_pos_arg_names=ignore_names),
         proper_subtype=proper_subtype,
     )
-    type_state.record_subtype_cache_entry(subtype_kind, left, right)
+    if not isinstance(original_left, TypeVarType):
+        type_state.record_subtype_cache_entry(subtype_kind, left, right)
     return True
+
+
+def protocol_self_binding_instance(left: TypeVarType, right: Instance) -> Instance | None:
+    """Find where to look up members of protocol 'right' when self binds to 'left' itself.
+
+    Return None when self binds to the upper bound of 'left' instead.
+    """
+    if not right.type.is_protocol or left.values:
+        return None
+    bound = get_proper_type(left.upper_bound)
+    instance = mypy.typeops.tuple_fallback(bound) if isinstance(bound, TupleType) else bound
+    if (
+        not isinstance(instance, Instance)
+        or instance.type.has_base(right.type.fullname)
+        or all(binds_self_trivially(instance.type, m) for m in right.type.protocol_members)
+    ):
+        return None
+    return instance
+
+
+def binds_self_trivially(info: TypeInfo, name: str) -> bool:
+    node = info.get(name)
+    return (
+        node is not None
+        and isinstance(node.node, (FuncDef, OverloadedFuncDef))
+        and node.node.is_trivial_self
+    )
 
 
 def get_protocol_member(

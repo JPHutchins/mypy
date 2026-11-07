@@ -15,6 +15,7 @@ from mypy.constraints import (
 from mypy.nodes import ArgKind
 from mypy.solve import solve_constraints
 from mypy.types import CallableType, Instance, Type, TypeVarLikeType
+from mypy.typestate import type_state
 
 
 class ArgumentInferContext:
@@ -57,6 +58,7 @@ def infer_function_type_arguments(
       formal_to_actual: mapping from formal to actual variable indices
     """
     # Infer constraints.
+    self_bindings_before = type_state.self_bindings_to_type_vars
     constraints = infer_constraints_for_callable(
         callee_type, arg_types, arg_kinds, arg_names, formal_to_actual, context
     )
@@ -65,7 +67,26 @@ def infer_function_type_arguments(
 
     # Solve constraints.
     type_vars = callee_type.variables
-    return solve_constraints(type_vars, constraints, strict, allow_polymorphic)
+    inferred_args, free_vars = solve_constraints(type_vars, constraints, strict, allow_polymorphic)
+    if type_state.self_bindings_to_type_vars != self_bindings_before and any(
+        a is None for a in inferred_args
+    ):
+        type_state.bind_self_to_type_vars = False
+        try:
+            return infer_function_type_arguments(
+                callee_type,
+                arg_types,
+                arg_kinds,
+                arg_names,
+                formal_to_actual,
+                context,
+                strict,
+                allow_polymorphic,
+                extra_constraints,
+            )
+        finally:
+            type_state.bind_self_to_type_vars = True
+    return inferred_args, free_vars
 
 
 def infer_type_arguments(

@@ -406,12 +406,22 @@ class DataclassTransformer:
             for attr in attributes
             if attr.is_in_init
         ]
+        self_type = TypeVarType(
+            SELF_TVAR_NAME,
+            f"{self._cls.info.fullname}.{SELF_TVAR_NAME}",
+            id=TypeVarId(-1, namespace=f"{self._cls.info.fullname}.__replace__"),
+            values=[],
+            upper_bound=fill_typevars(self._cls.info),
+            default=AnyType(TypeOfAny.from_omitted_generics),
+        )
         add_method_to_class(
             self._api,
             self._cls,
             "__replace__",
             args=args,
-            return_type=fill_typevars(self._cls.info),
+            return_type=self_type,
+            self_type=self_type,
+            tvar_def=self_type,
         )
 
     def _add_internal_replace_method(self, attributes: list[DataclassAttribute]) -> None:

@@ -122,6 +122,11 @@ class TypeState:
     # This is used to preserve backwards compatibility for situations like
     # testDictWithUnionAnySpecialCaseInStar2. This is needed until #5382 is fixed.
     allow_any_join: bool
+    # Whether constraint inference may bind self-types in protocol members to a type variable
+    # fixed in the scope being checked, instead of to its upper bound.
+    bind_self_to_type_vars: bool
+    # Number of times constraint inference has used that binding.
+    self_bindings_to_type_vars: int
 
     # N.B: We do all the accesses to these properties through
     # TypeState, instead of making these classmethods and accessing
@@ -142,6 +147,8 @@ class TypeState:
         self.infer_polymorphic = False
         self.keep_unions = False
         self.allow_any_join = False
+        self.bind_self_to_type_vars = True
+        self.self_bindings_to_type_vars = 0
         self.bind_self_cache = {}
 
     def is_assumed_subtype(self, left: Type, right: Type) -> bool:

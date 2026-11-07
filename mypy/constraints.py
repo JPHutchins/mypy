@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Final, TypeGuard, cast
 import mypy.subtypes
 import mypy.typeops
 from mypy.argmap import ArgTypeExpander
+from mypy.checker_state import checker_state
 from mypy.erasetype import erase_typevars
 from mypy.expandtype import expand_type_by_instance
 from mypy.maptype import map_instance_to_supertype
@@ -379,8 +380,13 @@ def _infer_constraints(
     ):
         # Unless template is also a type variable (or a union that contains one), using the upper
         # bound for inference will usually give better result for actual that is a type variable.
-        if not isinstance(template, UnionType) or not any(
-            isinstance(t, TypeVarType) for t in template.items
+        # Protocols are handled in ConstraintBuilderVisitor, since self-types in protocol members
+        # may bind to a type variable that is fixed in the scope being checked.
+        if (
+            not isinstance(template, UnionType)
+            or not any(isinstance(t, TypeVarType) for t in template.items)
+        ) and not (
+            isinstance(template, Instance) and self_binding_instance(template, actual) is not None
         ):
             actual = get_proper_type(actual.upper_bound)
 
@@ -1038,27 +1044,28 @@ class ConstraintBuilderVisitor(TypeVisitor[list[Constraint]]):
             return res
         elif isinstance(actual, TupleType) and self.direction == SUPERTYPE_OF:
             instance = mypy.typeops.tuple_fallback(actual)
-            erased = erase_typevars(template)
-            assert isinstance(erased, ProperType) and isinstance(erased, Instance)
             # Special-case protocols before using fallback to get more precise constraints
             # for custom tuple types like NamedTuples.
-            if (
-                template.type.is_protocol
-                and self.direction == SUPERTYPE_OF
-                and len(template.type.inferring) < MAX_PROTOCOL_DEPTH
-                and not any(template == t for t in reversed(template.type.inferring))
-                and mypy.subtypes.is_protocol_implementation(actual, erased, skip=["__call__"])
-            ):
-                template.type.inferring.append(template)
-                res = self.infer_constraints_from_protocol_members(
-                    instance, template, original_actual, template
-                )
-                template.type.inferring.pop()
-                return res
+            protocol_res = self.infer_protocol_constraints_binding_self(template, actual, instance)
+            if protocol_res is not None:
+                return protocol_res
             return infer_constraints(template, instance, self.direction)
         elif isinstance(actual, TypeVarType):
             if not actual.values and not actual.id.is_meta_var():
-                return infer_constraints(template, actual.upper_bound, self.direction)
+                instance = (
+                    self_binding_instance(template, actual)
+                    if self.direction == SUPERTYPE_OF
+                    else None
+                )
+                bound_to_type_var = (
+                    None
+                    if instance is None
+                    else self.infer_protocol_constraints_binding_self(template, actual, instance)
+                )
+                if bound_to_type_var is None:
+                    return infer_constraints(template, actual.upper_bound, self.direction)
+                type_state.self_bindings_to_type_vars += 1
+                return bound_to_type_var
             return []
         elif isinstance(actual, ParamSpecType):
             return infer_constraints(template, actual.upper_bound, self.direction)
@@ -1066,6 +1073,30 @@ class ConstraintBuilderVisitor(TypeVisitor[list[Constraint]]):
             raise NotImplementedError
         else:
             return []
+
+    def infer_protocol_constraints_binding_self(
+        self, template: Instance, self_type: TupleType | TypeVarType, instance: Instance
+    ) -> list[Constraint] | None:
+        """Infer constraints against protocol 'template', binding self to 'self_type'.
+
+        The 'instance' is the fallback of 'self_type' used to look up members.
+        Return None if this special case doesn't apply.
+        """
+        if not (
+            template.type.is_protocol
+            and self.direction == SUPERTYPE_OF
+            and len(template.type.inferring) < MAX_PROTOCOL_DEPTH
+            and not any(template == t for t in reversed(template.type.inferring))
+        ):
+            return None
+        erased = erase_typevars(template)
+        assert isinstance(erased, ProperType) and isinstance(erased, Instance)
+        if not mypy.subtypes.is_protocol_implementation(self_type, erased, skip=["__call__"]):
+            return None
+        template.type.inferring.append(template)
+        res = self.infer_constraints_from_protocol_members(instance, template, self_type, template)
+        template.type.inferring.pop()
+        return res
 
     def infer_constraints_from_protocol_members(
         self,
@@ -1810,3 +1841,27 @@ def filter_imprecise_kinds(cs: list[Constraint]) -> list[Constraint]:
         if not isinstance(c.target, Parameters) or not c.target.imprecise_arg_kinds:
             new_cs.append(c)
     return new_cs
+
+
+def self_binding_instance(template: Instance, actual: TypeVarType) -> Instance | None:
+    """Find where to look up members of protocol 'template' when self binds to 'actual'.
+
+    Return None when self binds to the upper bound of 'actual' instead.
+    """
+    if (
+        not type_state.bind_self_to_type_vars
+        or not template.type.is_protocol
+        or not is_rigid_type_var(actual)
+    ):
+        return None
+    return mypy.subtypes.protocol_self_binding_instance(actual, template)
+
+
+def is_rigid_type_var(t: TypeVarType) -> bool:
+    """Is 't' fixed in the scope being type checked, rather than being solved for?"""
+    checker = checker_state.type_checker
+    return checker is not None and (
+        t.id.is_self()
+        or t.id.namespace != ""
+        and any(node.fullname == t.id.namespace for node in checker.scope.stack)
+    )
