@@ -2421,7 +2421,7 @@ def f(value: T) -> None:
 reveal_type(replace(Hand(), x=1))  # N: Revealed type is "__main__.Hand"
 [builtins fixtures/paramspec.pyi]
 
-[case testSelfTypeDunderReplaceKeepsBoundTypeVar-xfail]
+[case testSelfTypeDunderReplaceKeepsBoundTypeVar]
 from typing import Protocol, TypeVar
 from typing_extensions import ParamSpec, Self
 
