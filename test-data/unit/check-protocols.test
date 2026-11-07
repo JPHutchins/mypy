@@ -4865,3 +4865,25 @@ from typing import Callable, TypeVar
 S = TypeVar("S")
 class C:
     def __init_subclass__(cls: type[S], item: Callable[[S], None]) -> None: ...
+
+[case testTupleTypeExplicitSelfTypeProto]
+from typing import Protocol, TypeVar
+
+R = TypeVar("R", covariant=True)
+
+class P(Protocol[R]):
+    def rep(self) -> R: ...
+
+def rep(x: P[R]) -> R: ...
+
+class C(tuple[int, str]):
+    def rep(self: "C") -> "C": ...
+
+class D(tuple[int, str]):
+    def rep(self: tuple[int, str]) -> int: ...
+
+c: C
+d: D
+reveal_type(rep(c))  # N: Revealed type is "tuple[builtins.int, builtins.str, fallback=__main__.C]"
+reveal_type(rep(d))  # N: Revealed type is "builtins.int"
+[builtins fixtures/tuple.pyi]
