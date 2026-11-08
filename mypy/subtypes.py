@@ -65,6 +65,7 @@ from mypy.types import (
     TypedDictType,
     TypeOfAny,
     TypeType,
+    TypeVarId,
     TypeVarLikeType,
     TypeVarTupleType,
     TypeVarType,
@@ -1450,21 +1451,15 @@ def ignores_self_binding(member: SymbolTableNode | None) -> bool:
     if isinstance(node, FuncDef):
         return node.is_trivial_self
     if isinstance(node, Decorator):
-        return node.func.is_trivial_self and (
-            getter_ignores_self_binding(node.var.type, node.info)
-            if node.var.is_property
-            else binds_regardless_of_receiver(node.var.type, node.info)
+        if node.var.is_property:
+            return getter_ignores_self_binding(node.var.type, node.info)
+        return (
+            node.var.type is not None
+            and binds_regardless_of_receiver(node.var.type, node.info)
             and not mentions_self_type(node.var.type)
         )
     if isinstance(node, OverloadedFuncDef):
-        return (
-            not node.is_property
-            and all(
-                (item.func if isinstance(item, Decorator) else item).is_trivial_self
-                for item in node.items
-            )
-            and binds_regardless_of_receiver(node.type, node.info)
-        )
+        return not node.is_property and binds_regardless_of_receiver(node.type, node.info)
     if isinstance(node, Var):
         from mypy.checkmember import is_instance_var
 
@@ -1477,8 +1472,8 @@ def ignores_self_binding(member: SymbolTableNode | None) -> bool:
     return False
 
 
-def mentions_self_type(typ: Type | None) -> bool:
-    return typ is None or any(tv.id.is_self() for tv in mypy.typeops.get_all_type_vars(typ))
+def mentions_self_type(typ: Type) -> bool:
+    return expand_type(typ, {TypeVarId(0): UninhabitedType()}) != typ
 
 
 def getter_ignores_self_binding(typ: Type | None, info: TypeInfo) -> bool:
@@ -1542,18 +1537,10 @@ def narrowest_self_binding(
         type_var
         if bound_to_type_var is not None
         and bound_to_upper_bound is not None
+        and expand_type(bound_to_type_var, {type_var.id: upper_bound}) == bound_to_upper_bound
         and is_subtype(bound_to_type_var, bound_to_upper_bound)
-        and is_same_type(
-            expand_type(bound_to_type_var, {type_var.id: upper_bound}), bound_to_upper_bound
-        )
-        and len(overload_items(bound_to_type_var)) == len(overload_items(bound_to_upper_bound))
         else upper_bound
     )
-
-
-def overload_items(typ: Type) -> list[CallableType]:
-    proper = get_proper_type(typ)
-    return proper.items if isinstance(proper, FunctionLike) else []
 
 
 def get_protocol_member(

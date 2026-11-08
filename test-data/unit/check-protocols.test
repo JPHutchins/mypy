@@ -5127,7 +5127,7 @@ def f(t: T) -> None:
     z: Q[T] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "Q[T]")
 [builtins fixtures/tuple.pyi]
 
-[case testTypeVarSelfTypeProtoTypeIsSelfImplementationMember-xfail]
+[case testTypeVarSelfTypeProtoTypeIsSelfImplementationMember]
 from typing import Any, Callable, Protocol, TypeVar
 from typing_extensions import Self, TypeIs
 
@@ -5152,7 +5152,7 @@ def f(t: T) -> None:
     x: P[C] = t
 [builtins fixtures/tuple.pyi]
 
-[case testTypeVarSelfTypeProtoParamSpecPrefixSelfMember-xfail]
+[case testTypeVarSelfTypeProtoParamSpecPrefixSelfMember]
 from typing import Any, Callable, Generic, Protocol, TypeVar
 from typing_extensions import Concatenate, ParamSpec, Self
 
