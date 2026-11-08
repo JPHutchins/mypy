@@ -5034,6 +5034,151 @@ def f(t: T) -> None:
     y: P[T] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "P[T]")
 [builtins fixtures/tuple.pyi]
 
+[case testTypeVarSelfTypeProtoUnionOfOverloadsMember]
+from typing import Any, Generic, Optional, Protocol, TypeVar, overload
+from typing_extensions import Self
+
+X = TypeVar("X")
+S = TypeVar("S", bound=str)
+R_co = TypeVar("R_co", covariant=True)
+V_co = TypeVar("V_co", covariant=True)
+
+class P(Protocol[R_co, V_co]):
+    def get(self) -> R_co: ...
+    def m(self) -> V_co: ...
+
+@overload
+def ovm(self: "C[S]", y: str = "") -> Optional[S]: ...
+@overload
+def ovm(self: "C[int]", y: str = "") -> int: ...
+def ovm(self: Any, y: str = "") -> Any: ...
+
+def other(self: "C[Any]", x: int = 0) -> int: ...
+def flag() -> bool: ...
+
+class C(Generic[X]):
+    def get(self) -> Self: ...
+    m = ovm if flag() else other
+
+def second(p: P[R_co, V_co]) -> V_co: ...
+
+T = TypeVar("T", bound=C[int])
+
+def f(t: T) -> int:
+    reveal_type(second(t))  # N: Revealed type is "builtins.int"
+    return second(t) + 1
+[builtins fixtures/primitives.pyi]
+
+[case testTypeVarSelfTypeProtoUnionWithFilteredOverloadMember]
+from typing import Any, Generic, Optional, Protocol, TypeVar, overload
+from typing_extensions import Self
+
+X = TypeVar("X")
+S = TypeVar("S", bound=str)
+R_co = TypeVar("R_co", covariant=True)
+
+class P(Protocol[R_co]):
+    def get(self) -> R_co: ...
+    def m(self) -> object: ...
+
+@overload
+def ovm(self: "C[S]", y: str = "") -> Optional[S]: ...
+@overload
+def ovm(self: int, y: str = "") -> object: ...
+def ovm(self: Any, y: str = "") -> Any: ...
+
+def other(self: "C[Any]", x: int = 0) -> int: ...
+def flag() -> bool: ...
+
+class C(Generic[X]):
+    def get(self) -> Self: ...
+    m = ovm if flag() else other
+
+T = TypeVar("T", bound=C[int])
+
+def f(t: T) -> None:
+    z: P[T] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "P[T]")
+    w: P[C[int]] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "P[C[int]]")
+[builtins fixtures/primitives.pyi]
+
+[case testTypeVarSelfTypeProtoTypeIsSelfInDecoratorType]
+from typing import Any, Callable, Protocol, TypeVar
+from typing_extensions import Self, TypeIs
+
+R_co = TypeVar("R_co", covariant=True)
+
+class Q(Protocol[R_co]):
+    def get(self) -> R_co: ...
+    wrap: Callable[[Callable[..., Any]], Callable[[Any, object], TypeIs[Self]]]
+    @wrap
+    def same(self) -> None: ...
+
+class C:
+    def get(self) -> Self: ...
+    wrap: Callable[[Callable[..., Any]], Callable[[Any, object], TypeIs[Self]]]
+    def same(self, other: object) -> "TypeIs[C]": ...
+
+def take(p: Q[R_co]) -> R_co: ...
+
+T = TypeVar("T", bound=C)
+
+def f(t: T) -> None:
+    reveal_type(take(t))  # N: Revealed type is "__main__.C"
+    z: Q[T] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "Q[T]")
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoTypeIsSelfImplementationMember-xfail]
+from typing import Any, Callable, Protocol, TypeVar
+from typing_extensions import Self, TypeIs
+
+R_co = TypeVar("R_co", covariant=True)
+
+class P(Protocol[R_co]):
+    def get(self) -> R_co: ...
+    def same(self, other: object) -> "TypeIs[C]": ...
+
+class C:
+    def get(self) -> Self: ...
+    wrap: Callable[[Callable[..., Any]], Callable[[Any, object], TypeIs[Self]]]
+    @wrap
+    def same(self) -> None: ...
+
+def take(p: P[R_co]) -> R_co: ...
+
+T = TypeVar("T", bound=C)
+
+def f(t: T) -> None:
+    reveal_type(take(t))  # N: Revealed type is "T`-1"
+    x: P[C] = t
+[builtins fixtures/tuple.pyi]
+
+[case testTypeVarSelfTypeProtoParamSpecPrefixSelfMember-xfail]
+from typing import Any, Callable, Generic, Protocol, TypeVar
+from typing_extensions import Concatenate, ParamSpec, Self
+
+R_co = TypeVar("R_co", covariant=True)
+Q = ParamSpec("Q")
+
+class Box(Generic[Q]): ...
+
+class P(Protocol[R_co]):
+    def get(self) -> R_co: ...
+    def put(self) -> "Box[[C[[int]], int]]": ...
+
+class C(Generic[Q]):
+    def get(self) -> Self: ...
+    wrap: Callable[[Callable[..., Any]], Callable[[Any], Box[Concatenate[Self, Q]]]]
+    @wrap
+    def put(self) -> None: ...
+
+def take(p: P[R_co]) -> R_co: ...
+
+T = TypeVar("T", bound=C[[int]])
+
+def f(t: T) -> None:
+    reveal_type(take(t))  # N: Revealed type is "T`-1"
+[builtins fixtures/paramspec.pyi]
+
 [case testProtocolCannotBeDisjointBase]
 from typing import Protocol
 from typing_extensions import disjoint_base
