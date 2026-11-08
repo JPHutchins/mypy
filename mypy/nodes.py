@@ -3744,8 +3744,8 @@ class TypeInfo(SymbolNode):
     # If concurrent/parallel type checking will be added in future,
     # then there should be one matrix per thread/process to avoid false negatives
     # during the type checking phase.
-    assuming: list[tuple[mypy.types.Instance, mypy.types.Instance]]
-    assuming_proper: list[tuple[mypy.types.Instance, mypy.types.Instance]]
+    assuming: list[tuple[mypy.types.Instance | mypy.types.TypeVarType, mypy.types.Instance]]
+    assuming_proper: list[tuple[mypy.types.Instance | mypy.types.TypeVarType, mypy.types.Instance]]
     # Ditto for temporary 'inferring' stack of recursive constraint inference.
     # It contains Instances of protocol types that appeared as an argument to
     # constraints.infer_constraints(). We need 'inferring' to avoid infinite recursion for

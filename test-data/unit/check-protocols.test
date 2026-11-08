@@ -4858,7 +4858,7 @@ def f(t: T) -> T:
     return take(t)  # E: Incompatible return value type (got "C", expected "T")
 [builtins fixtures/classmethod.pyi]
 
-[case testTypeVarSelfTypeProtoDecoratedSelfParameterMember-xfail]
+[case testTypeVarSelfTypeProtoDecoratedSelfParameterMember]
 from typing import Any, Callable, Protocol, TypeVar
 from typing_extensions import Self
 
@@ -4886,7 +4886,7 @@ def f(t: T) -> None:
     y: P[T] = t
 [builtins fixtures/tuple.pyi]
 
-[case testTypeVarSelfTypeProtoDecoratorTypeUsesSelf-xfail]
+[case testTypeVarSelfTypeProtoDecoratorTypeUsesSelf]
 from typing import Any, Callable, Protocol, TypeVar
 from typing_extensions import Self
 
@@ -5127,7 +5127,7 @@ def f(t: T) -> None:
     z: Q[T] = t  # E: Incompatible types in assignment (expression has type "T", variable has type "Q[T]")
 [builtins fixtures/tuple.pyi]
 
-[case testTypeVarSelfTypeProtoTypeIsSelfImplementationMember-xfail]
+[case testTypeVarSelfTypeProtoTypeIsSelfImplementationMember]
 from typing import Any, Callable, Protocol, TypeVar
 from typing_extensions import Self, TypeIs
 
@@ -5152,7 +5152,7 @@ def f(t: T) -> None:
     x: P[C] = t
 [builtins fixtures/tuple.pyi]
 
-[case testTypeVarSelfTypeProtoParamSpecPrefixSelfMember-xfail]
+[case testTypeVarSelfTypeProtoParamSpecPrefixSelfMember]
 from typing import Any, Callable, Generic, Protocol, TypeVar
 from typing_extensions import Concatenate, ParamSpec, Self
 
@@ -5251,7 +5251,7 @@ def h(u: U) -> None:
     x: P[U] = u  # E: Incompatible types in assignment (expression has type "U", variable has type "P[U]")
 [builtins fixtures/tuple.pyi]
 
-[case testTypeVarSelfTypeProtoKeepsTypeVar-xfail]
+[case testTypeVarSelfTypeProtoKeepsTypeVar]
 from typing import Protocol, TypeVar
 
 R = TypeVar("R", covariant=True)
@@ -5347,6 +5347,7 @@ TV = TypeVar("TV", bound=V)
 
 def g(a: TV, b: V) -> None:
     reveal_type(add(a, b))  # N: Revealed type is "__main__.V"
+    reveal_type(add(a, a))  # N: Revealed type is "__main__.V"
 [builtins fixtures/tuple.pyi]
 
 [case testTypeVarSelfTypeProtoSettableSelfMember]
@@ -5417,7 +5418,7 @@ def g(t: T) -> None:
     y: Proto[C] = t
 [builtins fixtures/tuple.pyi]
 
-[case testTypeVarSelfTypeProtoSelfParameterMemberKeepsTypeVar-xfail]
+[case testTypeVarSelfTypeProtoSelfParameterMemberKeepsTypeVar]
 from typing import Protocol, TypeVar
 from typing_extensions import Self
 
@@ -5494,6 +5495,7 @@ T = TypeVar("T", bound=C)
 def take(p: P[X]) -> X: ...
 
 def f(t: T, c: C, flag: bool) -> None:
+    reveal_type(take(t))  # N: Revealed type is "T`-1"
     s = [take(t), c]
     reveal_type(s)  # N: Revealed type is "builtins.list[__main__.C]"
     s[0].name()
@@ -5503,7 +5505,7 @@ def f(t: T, c: C, flag: bool) -> None:
     reveal_type(take(t) if flag else c)  # N: Revealed type is "__main__.C"
 [builtins fixtures/dict.pyi]
 
-[case testTypeVarSelfTypeProtoResultTypesVariable-xfail]
+[case testTypeVarSelfTypeProtoResultTypesVariable]
 from typing import Protocol, TypeVar
 from typing_extensions import Self
 
@@ -5692,7 +5694,7 @@ def f(tc: TC, c: C) -> None:
     reveal_type(qtake(tc, c.get))  # N: Revealed type is "(def () -> builtins.list[__main__.C]) | None"
 [builtins fixtures/property.pyi]
 
-[case testTypeVarSelfTypeProtoReadOnlyPropertyMember-xfail]
+[case testTypeVarSelfTypeProtoReadOnlyPropertyMember]
 from typing import Protocol, Tuple, TypeVar
 from typing_extensions import Self
 
@@ -5762,7 +5764,7 @@ def g(s: S) -> S:
                               # E: Argument 1 to "compose" has incompatible type "Callable[[S], S]"; expected "Callable[[P[C]], P[C]]"
 [builtins fixtures/tuple.pyi]
 
-[case testTypeVarSelfTypeProtoPolymorphicKeepsTypeVar-xfail]
+[case testTypeVarSelfTypeProtoPolymorphicKeepsTypeVar]
 from typing import Callable, Protocol, TypeVar
 from typing_extensions import Self
 
@@ -5819,7 +5821,7 @@ def ident(s: S) -> S:
     return s
 [builtins fixtures/tuple.pyi]
 
-[case testTypeVarSelfTypeProtoGenericCallableArgumentKeepsTypeVar-xfail]
+[case testTypeVarSelfTypeProtoGenericCallableArgumentKeepsTypeVar]
 from typing import Callable, Protocol, TypeVar
 from typing_extensions import Self
 
@@ -5869,7 +5871,7 @@ def g() -> None:
                              # N: Revealed type is "def [Y] (__main__.P[Y`5]) -> builtins.list[Y`5]"
 [builtins fixtures/list.pyi]
 
-[case testTypeVarSelfTypeProtoGenericCallableWithBoundTypeVarKeepsTypeVar-xfail]
+[case testTypeVarSelfTypeProtoGenericCallableWithBoundTypeVarKeepsTypeVar]
 from typing import Callable, Protocol, TypeVar
 from typing_extensions import Self
 
@@ -5923,7 +5925,7 @@ def f(t: T, c: C, d: D) -> None:
     reveal_type(t.n(c))  # N: Revealed type is "__main__.C"
 [builtins fixtures/tuple.pyi]
 
-[case testTypeVarSelfTypeProtoSelfAnnotatedMethodKeepsTypeVar-xfail]
+[case testTypeVarSelfTypeProtoSelfAnnotatedMethodKeepsTypeVar]
 from typing import Protocol, TypeVar
 from typing_extensions import Self
 
@@ -6025,7 +6027,7 @@ def f(t: T) -> None:
                    # N:         def w(self) -> D[T]
 [builtins fixtures/tuple.pyi]
 
-[case testTypeVarSelfTypeProtoNotCachedForUpperBound-xfail]
+[case testTypeVarSelfTypeProtoNotCachedForUpperBound]
 from typing import Protocol, TypeVar
 
 R = TypeVar("R", covariant=True)
@@ -6075,7 +6077,7 @@ def f(s: S) -> None:
     bad: P[S] = s  # E: Incompatible types in assignment (expression has type "S", variable has type "P[S]")
 [builtins fixtures/tuple.pyi]
 
-[case testTypeVarSelfTypeProtoRecursiveMemberKeepsTypeVar-xfail]
+[case testTypeVarSelfTypeProtoRecursiveMemberKeepsTypeVar]
 from typing import Protocol, TypeVar
 from typing_extensions import Self
 
@@ -6095,7 +6097,7 @@ def f(u: U) -> None:
     ok: P[U] = u
 [builtins fixtures/tuple.pyi]
 
-[case testTypeVarSelfTypeProtoSubtypingIndependentOfScope-xfail]
+[case testTypeVarSelfTypeProtoSubtypingIndependentOfScope]
 from typing import Protocol, TypeVar
 from typing_extensions import Self
 
