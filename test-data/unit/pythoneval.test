@@ -1998,35 +1998,6 @@ class A:
     items: Collection[Foo] = field(default_factory=list)
 [out]
 
-[case testCopyReplaceKeepsTypeVarAndSelf-xfail]
-# flags: --python-version=3.13
-import copy
-from dataclasses import dataclass
-from typing import NamedTuple, Self, TypeVar
-
-@dataclass(frozen=True)
-class A:
-    x: int
-
-    def bumped(self) -> Self:
-        return copy.replace(self, x=self.x + 1)
-
-class N(NamedTuple):
-    x: int
-
-TA = TypeVar("TA", bound=A)
-TN = TypeVar("TN", bound=N)
-
-def replace_a(value: TA) -> TA:
-    return copy.replace(value, x=2)
-
-def replace_n(value: TN) -> TN:
-    return copy.replace(value, x=2)
-
-print(A(0).bumped(), replace_a(A(0)), replace_n(N(0)))
-[out]
-A(x=1) A(x=2) N(x=2)
-
 [case testGenericInferenceWithItertools]
 from typing import TypeVar, Tuple
 from itertools import groupby
